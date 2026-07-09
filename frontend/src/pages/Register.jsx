@@ -29,7 +29,14 @@ export default function Register() {
   }
 
   return (
-    <div className="center-page" style={{ background: "var(--brand-900)", padding: "40px 0" }}>
+    <div className="center-page" style={{ background: "var(--brand-900)", padding: "40px 0", flexDirection: "column", gap: 20 }}>
+      <img
+        src="/icons/icon-192.png"
+        alt="Surishi Pharmaceuticals"
+        width={90}
+        height={90}
+        style={{ borderRadius: 20, boxShadow: "var(--shadow-md)" }}
+      />
       <form onSubmit={handleSubmit} className="card card-pad" style={{ width: 400, maxWidth: "90vw" }}>
         <h2>Create account</h2>
         {err && (

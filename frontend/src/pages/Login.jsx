@@ -28,7 +28,13 @@ export default function Login() {
   return (
     <div className="center-page" style={{ background: "var(--brand-900)", flexDirection: "column", gap: 24 }}>
       <div style={{ textAlign: "center", color: "#fff" }}>
-        <div style={{ fontSize: 28, fontWeight: 800 }}>Surishi Pharmaceuticals</div>
+        <img
+          src="/icons/icon-192.png"
+          alt="Surishi Pharmaceuticals"
+          width={110}
+          height={110}
+          style={{ borderRadius: 24, boxShadow: "var(--shadow-md)", marginBottom: 14 }}
+        />
         <div style={{ fontSize: 14, color: "var(--gold-100)", opacity: 0.9 }}>Marketing Execution Portal</div>
       </div>
       <form onSubmit={handleSubmit} className="card card-pad" style={{ width: 360, maxWidth: "90vw" }}>

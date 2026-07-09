@@ -87,12 +87,21 @@ export default function Layout() {
         }}
       >
         <div style={{ padding: "16px 18px 12px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontWeight: 800, fontSize: 17, color: "#fff", letterSpacing: -0.3 }}>
-              Surishi
-            </div>
-            <div style={{ fontSize: 11.5, color: "var(--gold-100)", opacity: 0.85, marginTop: 2 }}>
-              Marketing Execution
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <img
+              src="/icons/logo-mark.png"
+              alt=""
+              width={36}
+              height={36}
+              style={{ borderRadius: 9, flexShrink: 0 }}
+            />
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 16, color: "#fff", letterSpacing: -0.3 }}>
+                Surishi
+              </div>
+              <div style={{ fontSize: 11, color: "var(--gold-100)", opacity: 0.85 }}>
+                Marketing Execution
+              </div>
             </div>
           </div>
           <button
