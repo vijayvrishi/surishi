@@ -276,3 +276,24 @@ table.data-table tr:hover td { background: var(--brand-100); }
 }
 .toast.error { background: var(--danger); }
 .toast.success { background: var(--success); }
+
+@media (max-width: 768px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .modal-backdrop {
+    padding: 16px 8px;
+  }
+  h1 { font-size: 20px; }
+  table.data-table th,
+  table.data-table td {
+    padding: 8px 8px;
+    font-size: 12.5px;
+  }
+  .toast-wrap {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+  .toast { max-width: none; }
+}
