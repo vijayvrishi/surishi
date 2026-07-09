@@ -9,10 +9,11 @@ demo accounts.
 ## Structure
 
 - `backend/` — FastAPI + MongoDB (motor) API, JWT auth, Excel parsing (openpyxl), PDF
-  reports (reportlab). All routes under `/api`.
-- `frontend/` — Expo Router React Native app (**source not yet in this repo** — the
-  original export only included build config/cache, not the app source. Needs to be
-  re-exported or rebuilt).
+  reports (reportlab). All routes under `/api`. OpenAPI spec at `backend/openapi.json`
+  (also served live at `/docs`).
+- `frontend/` — React + Vite web app (dashboard, tasks, reports, performance, profile,
+  user management). The original Expo/React Native app source was never included in
+  the project export, so this is a from-scratch web rebuild of the same feature set.
 
 ## Backend setup
 
@@ -24,6 +25,15 @@ uvicorn server:app --reload --host 0.0.0.0 --port 8000
 ```
 
 Requires a running MongoDB instance (`MONGO_URL` in `.env`).
+
+## Frontend setup
+
+```bash
+cd frontend
+npm install
+cp .env.example .env   # set VITE_BACKEND_URL to the backend's URL
+npm run dev
+```
 
 ## Tests
 
