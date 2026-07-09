@@ -30,7 +30,12 @@ TOKEN_EXPIRE_DAYS = 7
 pwd_hash = PasswordHash.recommended()
 security = HTTPBearer()
 
-app = FastAPI()
+app = FastAPI(
+    title="Surishi Pharma Marketing Execution API",
+    description="Backend API for Surishi Pharmaceuticals marketing task tracking, "
+    "sales collection/targets, performance analytics, and reporting.",
+    version="1.4.0",
+)
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO)
