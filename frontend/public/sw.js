@@ -1,4 +1,4 @@
-const CACHE = "surishi-v1";
+const CACHE = "surishi-v2";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
