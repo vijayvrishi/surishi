@@ -20,7 +20,7 @@ BASE_URL = (
 API = f"{BASE_URL}/api"
 
 PASSWORD = "Surishi@123"
-CHAIRMAN = "chairman@surishi.com"
+CHAIRMAN = "chairman@surishi.in"
 HEAD = "head@surishi.com"
 PE = "pe@surishi.com"
 

@@ -1222,7 +1222,7 @@ DEMO_USERS = [
     {"name": "Product Executive", "email": "pe@surishi.com", "role": "product_executive"},
     {"name": "General Manager", "email": "gm@surishi.com", "role": "general_manager"},
     {"name": "CEO", "email": "ceo@surishi.com", "role": "ceo"},
-    {"name": "Chairman", "email": "chairman@surishi.com", "role": "chairman"},
+    {"name": "Chairman", "email": "chairman@surishi.in", "role": "chairman"},
     {"name": "AGM", "email": "agm@surishi.com", "role": "agm"},
     {"name": "Business Manager", "email": "bm@surishi.com", "role": "business_manager"},
 ]

@@ -6,7 +6,7 @@ All demo accounts are auto-seeded on backend startup.
 
 | Role | Email | Rights |
 |---|---|---|
-| Chairman | chairman@surishi.com | ✅ FULL: Excel upload, create/delete tasks + USER MANAGEMENT (change roles, reset passwords, delete users) |
+| Chairman | chairman@surishi.in | ✅ FULL: Excel upload, create/delete tasks + USER MANAGEMENT (change roles, reset passwords, delete users) |
 | Marketing Head | head@surishi.com | ✅ Admin (Excel upload, create/delete tasks) |
 | Marketing Deputy Head | deputy@surishi.com | ✅ Admin (Excel upload, create/delete tasks) |
 | Product Executive | pe@surishi.com | Member |
