@@ -30,6 +30,17 @@ TOKEN_EXPIRE_DAYS = 7
 pwd_hash = PasswordHash.recommended()
 security = HTTPBearer()
 
+
+def verify_password(password: str, password_hash) -> bool:
+    # A missing or malformed stored hash must read as "wrong password",
+    # never crash the request with a 500
+    if not password_hash or not isinstance(password_hash, str):
+        return False
+    try:
+        return pwd_hash.verify(password, password_hash)
+    except Exception:
+        return False
+
 app = FastAPI(
     title="Surishi Pharma Marketing Execution API",
     description="Backend API for Surishi Pharmaceuticals marketing task tracking, "
@@ -318,7 +329,7 @@ async def register(req: RegisterRequest):
 @api_router.post("/auth/login", response_model=TokenResponse)
 async def login(req: LoginRequest):
     user = await db.users.find_one({"email": req.email.lower()}, {"_id": 0})
-    if not user or not pwd_hash.verify(req.password, user["password_hash"]):
+    if not user or not verify_password(req.password, user.get("password_hash")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
     public = UserPublic(**{k: user.get(k) for k in ("id", "name", "email", "role", "hq")})
     return TokenResponse(access_token=create_token(user), user=public)
@@ -332,7 +343,7 @@ async def me(user: dict = Depends(get_current_user)):
 @api_router.post("/auth/change-password")
 async def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
     doc = await db.users.find_one({"id": user["id"]})
-    if not doc or not pwd_hash.verify(req.current_password, doc["password_hash"]):
+    if not doc or not verify_password(req.current_password, doc.get("password_hash")):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
     await db.users.update_one(
         {"id": user["id"]},
