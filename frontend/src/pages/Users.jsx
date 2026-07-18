@@ -10,11 +10,22 @@ export default function Users() {
   const [users, setUsers] = useState(null);
   const [editUser, setEditUser] = useState(null);
   const [resetUser, setResetUser] = useState(null);
+  const [resetRequests, setResetRequests] = useState([]);
 
   function load() {
     api.get("/users").then((res) => setUsers(res.data)).catch((e) => toast.error(apiErrorMessage(e)));
+    api.get("/admin/reset-requests").then((res) => setResetRequests(res.data)).catch(() => {});
   }
   useEffect(load, []);
+
+  async function dismissRequest(id) {
+    try {
+      await api.delete(`/admin/reset-requests/${id}`);
+      load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  }
 
   async function handleDelete(u) {
     if (!window.confirm(`Delete user ${u.name}? This cannot be undone.`)) return;
@@ -32,6 +43,34 @@ export default function Users() {
   return (
     <div>
       <h1>User Management</h1>
+
+      {resetRequests.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16, borderLeft: "4px solid var(--gold-600)" }}>
+          <h3>Password Reset Requests ({resetRequests.length})</h3>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {resetRequests.map((r) => {
+              const target = users?.find((u) => u.email === r.email);
+              return (
+                <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--gold-100)", borderRadius: 8, flexWrap: "wrap" }}>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 13.5 }}>{r.user_name || r.email}</div>
+                    <div style={{ fontSize: 12, color: "var(--ink-500)" }}>
+                      {r.email} · requested {new Date(r.requested_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {target && (
+                      <button className="btn btn-gold btn-sm" onClick={() => setResetUser(target)}>Reset password</button>
+                    )}
+                    <button className="btn btn-outline btn-sm" onClick={() => dismissRequest(r.id)}>Dismiss</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="card scroll-x">
         <table className="data-table">
           <thead>
@@ -63,7 +102,7 @@ export default function Users() {
         <EditUserModal user={editUser} onClose={() => setEditUser(null)} onSaved={() => { setEditUser(null); load(); }} />
       )}
       {resetUser && (
-        <ResetPasswordModal user={resetUser} onClose={() => setResetUser(null)} />
+        <ResetPasswordModal user={resetUser} onClose={() => { setResetUser(null); load(); }} />
       )}
     </div>
   );

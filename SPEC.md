@@ -34,6 +34,11 @@ Eight roles, JWT email+password auth. All demo accounts seeded on backend startu
 - Register (name, email, password ≥6 chars, role picker, optional HQ) and login.
 - JWT (HS256, 7-day expiry) returned as `access_token` with public user object.
 - Change own password; chairman can reset any password.
+- Forgot password (admin-mediated): "Forgot password?" on the login screen files
+  a reset request (same generic response whether or not the email exists, to
+  avoid leaking accounts). Chairman sees pending requests at the top of the
+  Users screen and resets from there; completing a reset auto-clears the
+  request. No email service is involved.
 
 ### 3.2 Tasks
 Fields: title, description, assignee, role, HQ, frequency (`daily|weekly`),
@@ -122,8 +127,8 @@ Full schema: `backend/openapi.json` / live Swagger at `/docs`.
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password` |
-| Users | `GET /api/users`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}` |
+| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password` |
+| Users | `GET /api/users`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}`, `GET/DELETE /api/admin/reset-requests[/{id}]` |
 | Tasks | `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/{id}`, `POST /api/tasks/upload`, photos: `POST /api/tasks/{id}/photos`, `DELETE /api/tasks/{id}/photos/{photoId}` |
 | Dashboard/Reports | `GET /api/dashboard`, `GET /api/reports?period=`, `GET /api/reports/pdf?period=`, `GET /api/meta/filters` |
 | Performance | `POST /api/performance/upload`, `GET /api/performance/months|brands|territories|management|growth` |

@@ -118,6 +118,10 @@ class AdminResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
 class PhotoUpload(BaseModel):
     photo_base64: str
     caption: Optional[str] = None
@@ -337,6 +341,23 @@ async def change_password(req: ChangePasswordRequest, user: dict = Depends(get_c
     return {"detail": "Password updated successfully"}
 
 
+@api_router.post("/auth/forgot-password")
+async def forgot_password(req: ForgotPasswordRequest):
+    user = await db.users.find_one({"email": req.email.lower()}, {"_id": 0, "id": 1, "name": 1, "email": 1})
+    if user:
+        pending = await db.password_reset_requests.find_one({"email": user["email"], "status": "pending"})
+        if not pending:
+            await db.password_reset_requests.insert_one({
+                "id": str(uuid.uuid4()),
+                "email": user["email"],
+                "user_name": user.get("name"),
+                "status": "pending",
+                "requested_at": datetime.now(timezone.utc).isoformat(),
+            })
+    # Same response whether or not the account exists, to avoid leaking emails
+    return {"detail": "Request received. Your administrator will reset your password and share it with you."}
+
+
 @api_router.get("/users")
 async def list_users(user: dict = Depends(get_current_user)):
     users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(500)
@@ -367,7 +388,26 @@ async def admin_reset_password(user_id: str, req: AdminResetPasswordRequest, adm
         {"id": user_id},
         {"$set": {"password_hash": pwd_hash.hash(req.new_password)}},
     )
+    await db.password_reset_requests.update_many(
+        {"email": target["email"], "status": "pending"},
+        {"$set": {"status": "completed", "completed_at": datetime.now(timezone.utc).isoformat()}},
+    )
     return {"detail": "Password reset successfully"}
+
+
+@api_router.get("/admin/reset-requests")
+async def list_reset_requests(admin: dict = Depends(require_user_manager)):
+    return await db.password_reset_requests.find(
+        {"status": "pending"}, {"_id": 0}
+    ).sort("requested_at", -1).to_list(200)
+
+
+@api_router.delete("/admin/reset-requests/{request_id}")
+async def dismiss_reset_request(request_id: str, admin: dict = Depends(require_user_manager)):
+    result = await db.password_reset_requests.delete_one({"id": request_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Request not found")
+    return {"deleted": True}
 
 
 @api_router.delete("/admin/users/{user_id}")
