@@ -60,6 +60,15 @@ frequencies (ongoing / as-scheduled) stay undated.
   period (`week|month|quarter`), free-text title search.
 - Detail view: all fields, status chips, collected-amount entry for sales
   items, photo gallery (upload/fullscreen/delete).
+- **Per-assignee completion**: a task can list multiple participants
+  (`units` — e.g. the BM/GM of each HQ). Each participant marks their own
+  status via `PATCH /tasks/{id}/completion`; the overall task status is
+  **derived** and only becomes "completed" when every participant has
+  completed it. The detail page shows a completion donut/progress graph and a
+  per-assignee breakdown; the task list shows an "X/N" completion count.
+  Tasks with no `units` keep the simple single-status behaviour. Participants
+  can be entered on the create form or via an "Assignees"/"HQ List" Excel
+  column.
 - Admin: manual create, delete.
 - **Excel bulk upload** (admin): `.xlsx/.xlsm`; the header row is auto-located
   (a title/banner row above the headers is fine), and columns are matched
@@ -142,7 +151,7 @@ Full schema: `backend/openapi.json` / live Swagger at `/docs`.
 |---|---|
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password` |
 | Users | `GET /api/users`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}`, `GET/DELETE /api/admin/reset-requests[/{id}]` |
-| Tasks | `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/{id}`, `POST /api/tasks/upload`, photos: `POST /api/tasks/{id}/photos`, `DELETE /api/tasks/{id}/photos/{photoId}` |
+| Tasks | `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/{id}`, `PATCH /api/tasks/{id}/completion` (per-assignee), `POST /api/tasks/upload`, photos: `POST /api/tasks/{id}/photos`, `DELETE /api/tasks/{id}/photos/{photoId}` |
 | Dashboard/Reports | `GET /api/dashboard`, `GET /api/reports?period=`, `GET /api/reports/pdf?period=`, `GET /api/meta/filters` |
 | Performance | `POST /api/performance/upload`, `GET /api/performance/months|brands|territories|management|growth` |
 

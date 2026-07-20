@@ -281,6 +281,9 @@ table.data-table tr:hover td { background: var(--brand-100); }
   .dashboard-grid {
     grid-template-columns: 1fr !important;
   }
+  .completion-grid {
+    grid-template-columns: 1fr !important;
+  }
   .modal-backdrop {
     padding: 16px 8px;
   }

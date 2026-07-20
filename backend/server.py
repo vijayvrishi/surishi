@@ -106,6 +106,7 @@ class TaskCreate(BaseModel):
     activity_category: Optional[str] = None  # free-text functional grouping (e.g. "CME planning")
     category: Optional[str] = None  # task | sales_collection | target (auto-derived if omitted)
     head: Optional[str] = None  # company | scientific_inputs | engagement
+    units: Optional[List[str]] = None  # per-assignee/HQ participants who must each complete it
     start_date: Optional[str] = None  # YYYY-MM-DD
     due_date: Optional[str] = None
     reporting_due_date: Optional[str] = None
@@ -118,6 +119,12 @@ class TaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     due_date: Optional[str] = None
+    units: Optional[List[str]] = None
+
+
+class CompletionUpdate(BaseModel):
+    unit: str
+    status: str
 
 
 class ChangePasswordRequest(BaseModel):
@@ -226,6 +233,8 @@ HEADER_MAP = {
     "task name": "title", "task": "title", "title": "title", "task title": "title", "activity": "title",
     "description": "description", "details": "description", "task description": "description",
     "assignee": "assignee", "assigned to": "assignee", "assignee name": "assignee", "responsible person": "assignee",
+    "assignees": "units", "units": "units", "hq list": "units", "hqs": "units", "team": "units",
+    "participants": "units", "assigned hqs": "units", "responsible hqs": "units",
     "role": "role", "roles and responsibilities": "role", "responsibility": "role", "designation": "role",
     "hq": "hq", "headquarter": "hq", "headquarters": "hq", "hq name": "hq",
     "frequency": "frequency", "freq": "frequency", "task frequency": "frequency", "recurrence": "frequency",
@@ -326,6 +335,52 @@ def period_start_for_frequency(freq: str) -> Optional[str]:
     return None  # ongoing / scheduled / other -> no anchored date
 
 
+def parse_units(v) -> List[str]:
+    """Split a free-text list of participants (comma / semicolon / slash / newline separated)."""
+    if v is None:
+        return []
+    if isinstance(v, (list, tuple)):
+        items = [str(x) for x in v]
+    else:
+        items = re.split(r"[,;\n/]+", str(v))
+    seen, out = set(), []
+    for it in items:
+        s = it.strip()
+        if s and s.lower() not in seen:
+            seen.add(s.lower())
+            out.append(s)
+    return out
+
+
+def build_completions(units: List[str], existing: Optional[list] = None) -> list:
+    prev = {c["unit"]: c for c in (existing or [])}
+    out = []
+    for u in units:
+        e = prev.get(u)
+        out.append({
+            "unit": u,
+            "status": (e or {}).get("status", "pending"),
+            "updated_at": (e or {}).get("updated_at"),
+            "updated_by": (e or {}).get("updated_by"),
+        })
+    return out
+
+
+def derive_completion(completions: list):
+    """Return (overall_status, pct, completed_count, total) from per-unit completions."""
+    total = len(completions)
+    if total == 0:
+        return None, None, 0, 0
+    completed = sum(1 for c in completions if c.get("status") == "completed")
+    if completed == total:
+        status = "completed"
+    elif any(c.get("status") in ("in_progress", "completed") for c in completions):
+        status = "in_progress"
+    else:
+        status = "pending"
+    return status, round(completed / total * 100, 1), completed, total
+
+
 def task_doc(data: dict, created_by: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     freq = data.get("frequency") or "monthly"
@@ -335,6 +390,10 @@ def task_doc(data: dict, created_by: str) -> dict:
     # Derive the internal enum from the free-text grouping unless explicitly set
     category = data.get("category") or norm_category(activity_category)
     freq_label = data.get("frequency_label") or data.get("frequency")
+    units = data.get("units") or []
+    completions = build_completions(units)
+    derived_status, pct, completed_n, total_n = derive_completion(completions)
+    status = derived_status if units else "pending"
     return {
         "id": str(uuid.uuid4()),
         "title": data.get("title") or "",
@@ -347,12 +406,17 @@ def task_doc(data: dict, created_by: str) -> dict:
         "category": category or "task",
         "activity_category": activity_category,
         "head": data.get("head"),
+        "units": units,
+        "completions": completions,
+        "completion_completed": completed_n,
+        "completion_total": total_n,
+        "completion_pct": pct,
         "start_date": data.get("start_date"),
         "due_date": due,
         "reporting_due_date": data.get("reporting_due_date"),
         "target_amount": data.get("target_amount"),
         "collected_amount": data.get("collected_amount"),
-        "status": "pending",
+        "status": status,
         "month": due[:7] if due else None,
         "created_by": created_by,
         "created_at": now,
@@ -502,6 +566,7 @@ async def admin_delete_user(user_id: str, admin: dict = Depends(require_user_man
 @api_router.post("/tasks")
 async def create_task(req: TaskCreate, user: dict = Depends(get_current_user)):
     data = req.model_dump()
+    data["units"] = parse_units(data.get("units"))
     data["activity_category"] = clean_str(data.get("activity_category"))
     # Keep an explicit enum choice if given, else derive from the activity grouping
     if data.get("category") in CATEGORIES:
@@ -579,16 +644,69 @@ async def update_task(task_id: str, req: TaskUpdate, user: dict = Depends(get_cu
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    if "status" in updates and updates["status"] not in STATUSES:
-        raise HTTPException(status_code=400, detail="Invalid status")
-    if "status" in updates and updates["status"] == "completed":
-        updates["completed_at"] = datetime.now(timezone.utc).isoformat()
+
+    # Editing the participant list rebuilds completions and re-derives status
+    if "units" in updates:
+        units = parse_units(updates.pop("units"))
+        completions = build_completions(units, task.get("completions"))
+        derived, pct, comp_n, total_n = derive_completion(completions)
+        updates.update({
+            "units": units, "completions": completions,
+            "completion_completed": comp_n, "completion_total": total_n,
+            "completion_pct": pct,
+        })
+        if units:
+            updates["status"] = derived  # derived overall for multi-unit tasks
+
+    has_units = bool(updates.get("units", task.get("units")))
+    if "status" in updates:
+        if updates["status"] not in STATUSES:
+            raise HTTPException(status_code=400, detail="Invalid status")
+        # For multi-unit tasks the overall status is derived, not set directly
+        if has_units and "units" not in updates:
+            raise HTTPException(status_code=400, detail="This task tracks completion per assignee; update each assignee's status instead")
+        if updates["status"] == "completed":
+            updates["completed_at"] = datetime.now(timezone.utc).isoformat()
     if "due_date" in updates:
         updates["month"] = updates["due_date"][:7]
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
     await db.tasks.update_one({"id": task_id}, {"$set": updates})
     updated = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     return updated
+
+
+@api_router.patch("/tasks/{task_id}/completion")
+async def update_completion(task_id: str, req: CompletionUpdate, user: dict = Depends(get_current_user)):
+    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if req.status not in STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid status")
+    completions = task.get("completions") or []
+    units = task.get("units") or []
+    if req.unit not in units:
+        raise HTTPException(status_code=404, detail="This assignee is not part of the task")
+    now = datetime.now(timezone.utc).isoformat()
+    found = False
+    for c in completions:
+        if c["unit"] == req.unit:
+            c["status"] = req.status
+            c["updated_at"] = now
+            c["updated_by"] = user.get("name")
+            found = True
+            break
+    if not found:
+        completions.append({"unit": req.unit, "status": req.status, "updated_at": now, "updated_by": user.get("name")})
+    derived, pct, comp_n, total_n = derive_completion(completions)
+    set_fields = {
+        "completions": completions, "status": derived,
+        "completion_completed": comp_n, "completion_total": total_n,
+        "completion_pct": pct, "updated_at": now,
+    }
+    if derived == "completed":
+        set_fields["completed_at"] = now
+    await db.tasks.update_one({"id": task_id}, {"$set": set_fields})
+    return await db.tasks.find_one({"id": task_id}, {"_id": 0})
 
 
 @api_router.delete("/tasks/{task_id}")
@@ -677,6 +795,7 @@ async def upload_excel(file: UploadFile = File(...), user: dict = Depends(requir
             "frequency": norm_frequency(freq_raw),
             "frequency_label": freq_raw,
             "activity_category": clean_str(cell("activity_category")),
+            "units": parse_units(cell("units")),
             "head": norm_head(cell("head")),
             "start_date": parse_excel_date(cell("start_date")),
             "due_date": parse_excel_date(cell("due_date")),

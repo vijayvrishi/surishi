@@ -146,7 +146,14 @@ export default function Tasks() {
                   <td>{t.activity_category || (CATEGORY_LABELS[t.category] || "—")}</td>
                   <td>{t.frequency_label || (meta.frequency_labels && meta.frequency_labels[t.frequency]) || t.frequency}</td>
                   <td>{t.due_date || "—"}</td>
-                  <td><StatusBadge status={t.status} /></td>
+                  <td>
+                    <StatusBadge status={t.status} />
+                    {t.units && t.units.length > 0 && (
+                      <span style={{ marginLeft: 6, fontSize: 11.5, color: "var(--ink-500)", whiteSpace: "nowrap" }}>
+                        {t.completion_completed}/{t.completion_total}
+                      </span>
+                    )}
+                  </td>
                   <td><Link className="btn btn-outline btn-sm" to={`/tasks/${t.id}`}>Open</Link></td>
                 </tr>
               ))}
@@ -178,7 +185,7 @@ function CreateTaskModal({ onClose, onCreated }) {
   const toast = useToast();
   const [form, setForm] = useState({
     title: "", description: "", assignee: "", role: "", hq: "",
-    frequency: "Monthly", activity_category: "", category: "task", head: "",
+    frequency: "Monthly", activity_category: "", category: "task", head: "", units: "",
     start_date: "", due_date: "", reporting_due_date: "", target_amount: "",
   });
   const [busy, setBusy] = useState(false);
@@ -191,6 +198,9 @@ function CreateTaskModal({ onClose, onCreated }) {
     try {
       const payload = { ...form };
       payload.target_amount = payload.target_amount ? parseFloat(payload.target_amount) : null;
+      payload.units = form.units
+        ? form.units.split(/[,;\n]+/).map((u) => u.trim()).filter(Boolean)
+        : null;
       Object.keys(payload).forEach((k) => { if (payload[k] === "") payload[k] = null; });
       await api.post("/tasks", payload);
       onCreated();
@@ -211,6 +221,15 @@ function CreateTaskModal({ onClose, onCreated }) {
         <div className="field">
           <label className="field-label">Description</label>
           <textarea className="textarea" value={form.description} onChange={(e) => set("description", e.target.value)} />
+        </div>
+        <div className="field">
+          <label className="field-label">Assignees / HQs who must each complete it (optional)</label>
+          <textarea
+            className="textarea"
+            value={form.units}
+            onChange={(e) => set("units", e.target.value)}
+            placeholder="One per line or comma-separated, e.g. Jaipur BM, Udaipur BM, Kota BM. Leave blank for a single-status task."
+          />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
           <div className="field">

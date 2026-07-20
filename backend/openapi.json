@@ -774,6 +774,58 @@
         }
       }
     },
+    "/api/tasks/{task_id}/completion": {
+      "patch": {
+        "summary": "Update Completion",
+        "operationId": "update_completion_api_tasks__task_id__completion_patch",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Task Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompletionUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/tasks/{task_id}/photos": {
       "post": {
         "summary": "Add Task Photo",
@@ -1395,6 +1447,24 @@
         ],
         "title": "ChangePasswordRequest"
       },
+      "CompletionUpdate": {
+        "properties": {
+          "unit": {
+            "type": "string",
+            "title": "Unit"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unit",
+          "status"
+        ],
+        "title": "CompletionUpdate"
+      },
       "ForgotPasswordRequest": {
         "properties": {
           "email": {
@@ -1594,6 +1664,20 @@
             ],
             "title": "Head"
           },
+          "units": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
+          },
           "start_date": {
             "anyOf": [
               {
@@ -1701,6 +1785,20 @@
               }
             ],
             "title": "Due Date"
+          },
+          "units": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Units"
           }
         },
         "type": "object",
