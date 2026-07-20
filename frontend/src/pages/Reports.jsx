@@ -7,6 +7,7 @@ import { Loader, Progress, EmptyState, Modal, StatusBadge } from "../components/
 const PERIODS = ["week", "month", "quarter"];
 const STATUS_COLORS = { completed: "#16a34a", in_progress: "#d97706", pending: "#94a3b8" };
 const HEAD_LABELS = { company: "Company", scientific_inputs: "Scientific Inputs", engagement: "Engagement", Unassigned: "Unassigned" };
+const FREQUENCY_LABELS = { daily: "Daily", weekly: "Weekly", monthly: "Monthly", quarterly: "Quarterly", yearly: "Yearly", ongoing: "Ongoing", scheduled: "As Scheduled", other: "Other" };
 
 export default function Reports() {
   const toast = useToast();
@@ -123,15 +124,32 @@ export default function Reports() {
             </div>
           </div>
 
-          <DrillTable title="By HQ" rows={data.by_hq} onOpen={(name) => openDrill("hq", name)} />
-          <DrillTable title="By Assignee" rows={data.by_assignee} onOpen={(name) => openDrill("assignee", name)} />
-          <DrillTable title="By Role" rows={data.by_role} onOpen={(name) => openDrill("role", name)} />
           <DrillTable
-            title="By Activity Head"
-            rows={data.by_head}
-            labelMap={HEAD_LABELS}
-            onOpen={(name) => openDrill("head", name === "Unassigned" ? "" : name)}
+            title="By Activity Category"
+            rows={data.by_activity_category}
+            onOpen={(name) => openDrill("activity_category", name === "Unassigned" ? "" : name)}
           />
+          <DrillTable title="By Assignee" rows={data.by_assignee} onOpen={(name) => openDrill("assignee", name)} />
+          <DrillTable
+            title="By Frequency"
+            rows={data.by_frequency}
+            labelMap={FREQUENCY_LABELS}
+            onOpen={(name) => openDrill("frequency", name)}
+          />
+          {(data.by_hq || []).some((r) => r.name !== "Unassigned") && (
+            <DrillTable title="By HQ" rows={data.by_hq} onOpen={(name) => openDrill("hq", name)} />
+          )}
+          {(data.by_role || []).some((r) => r.name !== "Unassigned") && (
+            <DrillTable title="By Role" rows={data.by_role} onOpen={(name) => openDrill("role", name)} />
+          )}
+          {(data.by_head || []).some((r) => r.name !== "Unassigned") && (
+            <DrillTable
+              title="By Activity Head"
+              rows={data.by_head}
+              labelMap={HEAD_LABELS}
+              onOpen={(name) => openDrill("head", name === "Unassigned" ? "" : name)}
+            />
+          )}
         </>
       )}
 

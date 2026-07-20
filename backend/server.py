@@ -62,6 +62,11 @@ USER_MANAGER_ROLES = {"chairman"}
 CATEGORIES = ["task", "sales_collection", "target"]
 STATUSES = ["pending", "in_progress", "completed"]
 HEADS = ["company", "scientific_inputs", "engagement"]
+FREQUENCIES = ["daily", "weekly", "monthly", "quarterly", "yearly", "ongoing", "scheduled", "other"]
+FREQUENCY_LABELS = {
+    "daily": "Daily", "weekly": "Weekly", "monthly": "Monthly", "quarterly": "Quarterly",
+    "yearly": "Yearly", "ongoing": "Ongoing", "scheduled": "As Scheduled", "other": "Other",
+}
 
 
 # ------------------- Models -------------------
@@ -97,8 +102,9 @@ class TaskCreate(BaseModel):
     assignee: Optional[str] = None
     role: Optional[str] = None
     hq: Optional[str] = None
-    frequency: str = "weekly"  # daily | weekly
-    category: str = "task"  # task | sales_collection | target
+    frequency: str = "monthly"  # free text (Daily / Weekly / Monthly / Ongoing / Per CME schedule ...)
+    activity_category: Optional[str] = None  # free-text functional grouping (e.g. "CME planning")
+    category: Optional[str] = None  # task | sales_collection | target (auto-derived if omitted)
     head: Optional[str] = None  # company | scientific_inputs | engagement
     start_date: Optional[str] = None  # YYYY-MM-DD
     due_date: Optional[str] = None
@@ -222,10 +228,12 @@ HEADER_MAP = {
     "assignee": "assignee", "assigned to": "assignee", "assignee name": "assignee", "responsible person": "assignee",
     "role": "role", "roles and responsibilities": "role", "responsibility": "role", "designation": "role",
     "hq": "hq", "headquarter": "hq", "headquarters": "hq", "hq name": "hq",
-    "frequency": "frequency", "freq": "frequency", "task frequency": "frequency",
+    "frequency": "frequency", "freq": "frequency", "task frequency": "frequency", "recurrence": "frequency",
     "start date": "start_date", "from date": "start_date",
     "due date": "due_date", "end date": "due_date", "deadline": "due_date", "timeline": "due_date", "to date": "due_date",
-    "category": "category", "type": "category", "task type": "category",
+    "start / due date": "due_date", "start/due date": "due_date", "start due date": "due_date", "due": "due_date",
+    "category": "activity_category", "type": "activity_category", "task type": "activity_category",
+    "activity area": "activity_category", "activity category": "activity_category", "area": "activity_category",
     "head": "head", "activity head": "head", "activity type": "head", "segment": "head", "activity segment": "head",
     "target amount": "target_amount", "target": "target_amount", "sales target": "target_amount",
     "collected amount": "collected_amount", "collection": "collected_amount", "sales collection": "collected_amount", "collection amount": "collected_amount",
@@ -250,10 +258,32 @@ def norm_category(v) -> str:
 
 
 def norm_frequency(v) -> str:
+    """Bucket a free-text frequency into a known value; unknown text -> 'scheduled' or 'other'."""
     if not v:
-        return "weekly"
+        return "monthly"
     s = str(v).strip().lower()
-    return "daily" if s.startswith("d") else "weekly"
+    if "dai" in s or s == "d":
+        return "daily"
+    if "week" in s:
+        return "weekly"
+    if "month" in s:
+        return "monthly"
+    if "quarter" in s:
+        return "quarterly"
+    if "year" in s or "annual" in s:
+        return "yearly"
+    if "ongoing" in s or "continu" in s:
+        return "ongoing"
+    if "schedul" in s or "per " in s or "as " in s or "cme" in s:
+        return "scheduled"
+    return "other"
+
+
+def clean_str(v) -> Optional[str]:
+    if v is None:
+        return None
+    s = str(v).strip()
+    return s or None
 
 
 def norm_head(v) -> Optional[str]:
@@ -278,9 +308,33 @@ def to_float(v) -> Optional[float]:
         return None
 
 
+def period_start_for_frequency(freq: str) -> Optional[str]:
+    """First day of the current period for a recurring frequency, used as the due
+    date when a task has no explicit one. Non-periodic frequencies return None."""
+    t = utc_today()
+    if freq == "daily":
+        return t.isoformat()
+    if freq == "weekly":
+        return (t - timedelta(days=t.weekday())).isoformat()
+    if freq == "monthly":
+        return date(t.year, t.month, 1).isoformat()
+    if freq == "quarterly":
+        q = (t.month - 1) // 3
+        return date(t.year, q * 3 + 1, 1).isoformat()
+    if freq == "yearly":
+        return date(t.year, 1, 1).isoformat()
+    return None  # ongoing / scheduled / other -> no anchored date
+
+
 def task_doc(data: dict, created_by: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
-    due = data.get("due_date")
+    freq = data.get("frequency") or "monthly"
+    # Anchor undated recurring tasks to the first day of the concerned period
+    due = data.get("due_date") or period_start_for_frequency(freq)
+    activity_category = data.get("activity_category")
+    # Derive the internal enum from the free-text grouping unless explicitly set
+    category = data.get("category") or norm_category(activity_category)
+    freq_label = data.get("frequency_label") or data.get("frequency")
     return {
         "id": str(uuid.uuid4()),
         "title": data.get("title") or "",
@@ -288,8 +342,10 @@ def task_doc(data: dict, created_by: str) -> dict:
         "assignee": data.get("assignee"),
         "role": data.get("role"),
         "hq": data.get("hq"),
-        "frequency": data.get("frequency") or "weekly",
-        "category": data.get("category") or "task",
+        "frequency": freq,
+        "frequency_label": freq_label,
+        "category": category or "task",
+        "activity_category": activity_category,
         "head": data.get("head"),
         "start_date": data.get("start_date"),
         "due_date": due,
@@ -302,6 +358,17 @@ def task_doc(data: dict, created_by: str) -> dict:
         "created_at": now,
         "updated_at": now,
     }
+
+
+def find_header_row(rows) -> int:
+    """Locate the header row: the first row (within the first 15) that maps to a title column."""
+    for i, row in enumerate(rows[:15]):
+        if not row:
+            continue
+        for h in row:
+            if h is not None and HEADER_MAP.get(norm_header(h)) == "title":
+                return i
+    return 0
 
 
 # ------------------- Auth routes -------------------
@@ -435,7 +502,13 @@ async def admin_delete_user(user_id: str, admin: dict = Depends(require_user_man
 @api_router.post("/tasks")
 async def create_task(req: TaskCreate, user: dict = Depends(get_current_user)):
     data = req.model_dump()
-    data["category"] = norm_category(data.get("category"))
+    data["activity_category"] = clean_str(data.get("activity_category"))
+    # Keep an explicit enum choice if given, else derive from the activity grouping
+    if data.get("category") in CATEGORIES:
+        data["category"] = data["category"]
+    else:
+        data["category"] = norm_category(data.get("activity_category"))
+    data["frequency_label"] = clean_str(data.get("frequency"))
     data["frequency"] = norm_frequency(data.get("frequency"))
     data["head"] = norm_head(data.get("head"))
     doc = task_doc(data, user["id"])
@@ -451,6 +524,7 @@ async def list_tasks(
     hq: Optional[str] = None,
     status: Optional[str] = None,
     category: Optional[str] = None,
+    activity_category: Optional[str] = None,
     head: Optional[str] = None,
     assignee: Optional[str] = None,
     role: Optional[str] = None,
@@ -467,6 +541,8 @@ async def list_tasks(
         query["status"] = status
     if category:
         query["category"] = category
+    if activity_category:
+        query["activity_category"] = activity_category
     if head:
         query["head"] = head
     if assignee:
@@ -567,7 +643,8 @@ async def upload_excel(file: UploadFile = File(...), user: dict = Depends(requir
     if len(rows) < 2:
         raise HTTPException(status_code=400, detail="Excel file has no data rows")
 
-    headers = rows[0]
+    header_idx = find_header_row(rows)
+    headers = rows[header_idx]
     col_map = {}
     for idx, h in enumerate(headers):
         if h is None:
@@ -580,7 +657,7 @@ async def upload_excel(file: UploadFile = File(...), user: dict = Depends(requir
 
     inserted = []
     skipped = []
-    for row_num, row in enumerate(rows[1:], start=2):
+    for row_num, row in enumerate(rows[header_idx + 1:], start=header_idx + 2):
         def cell(key):
             i = col_map.get(key)
             return row[i] if i is not None and i < len(row) else None
@@ -590,14 +667,16 @@ async def upload_excel(file: UploadFile = File(...), user: dict = Depends(requir
             if any(v is not None and str(v).strip() != "" for v in row):
                 skipped.append({"row": row_num, "reason": "Missing task name"})
             continue
+        freq_raw = clean_str(cell("frequency"))
         data = {
             "title": str(title).strip(),
-            "description": str(cell("description")).strip() if cell("description") is not None else None,
-            "assignee": str(cell("assignee")).strip() if cell("assignee") is not None else None,
-            "role": str(cell("role")).strip() if cell("role") is not None else None,
-            "hq": str(cell("hq")).strip() if cell("hq") is not None else None,
-            "frequency": norm_frequency(cell("frequency")),
-            "category": norm_category(cell("category")),
+            "description": clean_str(cell("description")),
+            "assignee": clean_str(cell("assignee")),
+            "role": clean_str(cell("role")),
+            "hq": clean_str(cell("hq")),
+            "frequency": norm_frequency(freq_raw),
+            "frequency_label": freq_raw,
+            "activity_category": clean_str(cell("activity_category")),
             "head": norm_head(cell("head")),
             "start_date": parse_excel_date(cell("start_date")),
             "due_date": parse_excel_date(cell("due_date")),
@@ -942,7 +1021,12 @@ async def meta_filters(user: dict = Depends(get_current_user)):
     hqs = [h for h in await db.tasks.distinct("hq") if h]
     assignees = [a for a in await db.tasks.distinct("assignee") if a]
     roles = [r for r in await db.tasks.distinct("role") if r]
+    activity_categories = [c for c in await db.tasks.distinct("activity_category") if c]
+    frequencies = [f for f in await db.tasks.distinct("frequency") if f]
+    frequencies.sort(key=lambda f: FREQUENCIES.index(f) if f in FREQUENCIES else 99)
     return {"hqs": sorted(hqs), "assignees": sorted(assignees), "roles": sorted(roles),
+            "activity_categories": sorted(activity_categories), "frequencies": frequencies,
+            "frequency_labels": FREQUENCY_LABELS,
             "categories": CATEGORIES, "statuses": STATUSES, "heads": HEADS}
 
 
@@ -1017,6 +1101,7 @@ async def build_report(period: str) -> dict:
         "by_assignee": group_summary(tasks, "assignee"),
         "by_role": group_summary(tasks, "role"),
         "by_frequency": group_summary(tasks, "frequency"),
+        "by_activity_category": group_summary(tasks, "activity_category"),
         "by_head": group_summary(tasks, "head"),
         "sales": sales_summary(tasks),
     }
@@ -1094,16 +1179,22 @@ async def reports_pdf(period: str = "month", user: dict = Depends(get_current_us
          f"{sales['achievement_pct']}%", str(sales["count"])],
     ], header_bg=gold))
 
-    for key, label in (("by_head", "Activity Head-wise Performance"), ("by_hq", "HQ-wise Performance"),
+    for key, label in (("by_activity_category", "Activity Category-wise Performance"),
+                       ("by_head", "Activity Head-wise Performance"), ("by_hq", "HQ-wise Performance"),
                        ("by_assignee", "Assignee-wise Performance"),
                        ("by_role", "Role-wise Performance"), ("by_frequency", "Frequency-wise Performance")):
-        rows = data[key]
+        rows = data.get(key) or []
         if not rows:
             continue
         story.append(Paragraph(label, h2))
         table_rows = [["Name", "Total", "Completed", "In Progress", "Pending", "Overdue", "Rate"]]
         for r in rows:
-            display = HEAD_LABELS.get(r["name"], r["name"]) if key == "by_head" else r["name"]
+            if key == "by_head":
+                display = HEAD_LABELS.get(r["name"], r["name"])
+            elif key == "by_frequency":
+                display = FREQUENCY_LABELS.get(r["name"], r["name"])
+            else:
+                display = r["name"]
             table_rows.append([
                 Paragraph(str(display), styles["Normal"]),
                 str(r["total"]), str(r["completed"]), str(r["in_progress"]),

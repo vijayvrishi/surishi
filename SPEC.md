@@ -41,20 +41,33 @@ Eight roles, JWT email+password auth. All demo accounts seeded on backend startu
   request. No email service is involved.
 
 ### 3.2 Tasks
-Fields: title, description, assignee, role, HQ, frequency (`daily|weekly`),
-category (`task|sales_collection|target`), activity head
-(`company|scientific_inputs|engagement`), start/due/reporting-due dates,
-target amount, collected amount, status (`pending|in_progress|completed`),
-photos (≤10, base64 ≤4 MB each), derived `month` from due date.
+Fields: title, description, assignee, role, HQ, frequency (bucket:
+`daily|weekly|monthly|quarterly|yearly|ongoing|scheduled|other` plus the
+original free-text `frequency_label`, e.g. "Per CME schedule"),
+`activity_category` (free-text functional grouping, e.g. "CME planning",
+"Collections"), category (`task|sales_collection|target`, auto-derived from
+the activity grouping), activity head (`company|scientific_inputs|engagement`),
+start/due/reporting-due dates, target amount, collected amount, status
+(`pending|in_progress|completed`), photos (≤10, base64 ≤4 MB each), derived
+`month` from due date.
+
+Recurring tasks with no explicit date are anchored to the first day of the
+concerned period (monthly → 1st of month, quarterly → 1st of quarter, etc.)
+so they appear in period-scoped dashboards and reports; non-periodic
+frequencies (ongoing / as-scheduled) stay undated.
 
 - List with filters: frequency, status, HQ, category, head, assignee, role,
   period (`week|month|quarter`), free-text title search.
 - Detail view: all fields, status chips, collected-amount entry for sales
   items, photo gallery (upload/fullscreen/delete).
 - Admin: manual create, delete.
-- **Excel bulk upload** (admin): `.xlsx/.xlsm`; flexible header matching (e.g.
-  "Task Name"/"Activity" → title, "Deadline"/"Timeline" → due date); rows
-  missing a task name are reported back as skipped with row numbers.
+- **Excel bulk upload** (admin): `.xlsx/.xlsm`; the header row is auto-located
+  (a title/banner row above the headers is fine), and columns are matched
+  flexibly (e.g. "Task Name"/"Activity" → title, "Start / Due Date"/"Deadline"
+  /"Timeline" → due date, "Category"/"Activity Area" → activity_category); rows
+  missing a task name are reported back as skipped with row numbers. Verified
+  against the production task sheet (Assignee, Task Name, Description, Frequency,
+  Start / Due Date, Category, Reporting Due Date).
 
 ### 3.3 Dashboard
 Current-month KPIs (total/completed/in-progress/pending/overdue/completion %),

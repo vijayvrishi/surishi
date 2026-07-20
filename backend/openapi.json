@@ -524,6 +524,22 @@
             }
           },
           {
+            "name": "activity_category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Activity Category"
+            }
+          },
+          {
             "name": "head",
             "in": "query",
             "required": false,
@@ -1543,12 +1559,29 @@
           "frequency": {
             "type": "string",
             "title": "Frequency",
-            "default": "weekly"
+            "default": "monthly"
+          },
+          "activity_category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Category"
           },
           "category": {
-            "type": "string",
-            "title": "Category",
-            "default": "task"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
           },
           "head": {
             "anyOf": [

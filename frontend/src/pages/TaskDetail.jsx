@@ -113,9 +113,10 @@ export default function TaskDetail() {
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 16, fontSize: 13.5 }}>
           <Field label="Assignee" value={task.assignee} />
+          <Field label="Activity Category" value={task.activity_category} />
+          <Field label="Frequency" value={task.frequency_label || task.frequency} />
           <Field label="Role" value={task.role} />
           <Field label="HQ" value={task.hq} />
-          <Field label="Category" value={task.category} />
           <Field label="Start Date" value={task.start_date} />
           <Field label="Due Date" value={task.due_date} />
           <Field label="Reporting Due" value={task.reporting_due_date} />

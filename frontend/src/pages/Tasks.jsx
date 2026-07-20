@@ -5,21 +5,21 @@ import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
 import { Loader, StatusBadge, HeadBadge, EmptyState, Modal } from "../components/UI";
 
-const FREQUENCIES = ["daily", "weekly"];
 const STATUSES = ["pending", "in_progress", "completed"];
 const CATEGORIES = ["task", "sales_collection", "target"];
 const HEADS = ["company", "scientific_inputs", "engagement"];
 const HEAD_LABELS = { company: "Company", scientific_inputs: "Scientific Inputs", engagement: "Engagement" };
 const CATEGORY_LABELS = { task: "Task", sales_collection: "Sales Collection", target: "Target" };
+const FREQUENCY_OPTIONS = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly", "Ongoing"];
 
 export default function Tasks() {
   const { isAdmin } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [tasks, setTasks] = useState(null);
-  const [meta, setMeta] = useState({ hqs: [], assignees: [], roles: [] });
+  const [meta, setMeta] = useState({ hqs: [], assignees: [], roles: [], activity_categories: [], frequencies: [], frequency_labels: {} });
   const [filters, setFilters] = useState({
-    frequency: "", status: "", hq: "", category: "", head: "", period: "", search: "",
+    frequency: "", status: "", hq: "", category: "", activity_category: "", assignee: "", head: "", period: "", search: "",
   });
   const [showCreate, setShowCreate] = useState(params.get("create") === "1");
   const [showUpload, setShowUpload] = useState(params.get("upload") === "1");
@@ -81,9 +81,9 @@ export default function Tasks() {
           ))}
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8 }}>
-          {FREQUENCIES.map((f) => (
+          {(meta.frequencies || []).map((f) => (
             <button key={f} className={`chip ${filters.frequency === f ? "active" : ""}`} onClick={() => setFilter("frequency", f)}>
-              {f[0].toUpperCase() + f.slice(1)}
+              {(meta.frequency_labels && meta.frequency_labels[f]) || f}
             </button>
           ))}
           {STATUSES.map((s) => (
@@ -104,12 +104,26 @@ export default function Tasks() {
             </button>
           ))}
         </div>
-        {meta.hqs.length > 0 && (
-          <select className="select" style={{ maxWidth: 220 }} value={filters.hq} onChange={(e) => setFilters((f) => ({ ...f, hq: e.target.value }))}>
-            <option value="">All HQs</option>
-            {meta.hqs.map((h) => <option key={h} value={h}>{h}</option>)}
-          </select>
-        )}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {(meta.activity_categories || []).length > 0 && (
+            <select className="select" style={{ maxWidth: 240 }} value={filters.activity_category} onChange={(e) => setFilters((f) => ({ ...f, activity_category: e.target.value }))}>
+              <option value="">All activity categories</option>
+              {meta.activity_categories.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          )}
+          {(meta.assignees || []).length > 0 && (
+            <select className="select" style={{ maxWidth: 200 }} value={filters.assignee || ""} onChange={(e) => setFilters((f) => ({ ...f, assignee: e.target.value }))}>
+              <option value="">All assignees</option>
+              {meta.assignees.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
+          {(meta.hqs || []).length > 0 && (
+            <select className="select" style={{ maxWidth: 200 }} value={filters.hq} onChange={(e) => setFilters((f) => ({ ...f, hq: e.target.value }))}>
+              <option value="">All HQs</option>
+              {meta.hqs.map((h) => <option key={h} value={h}>{h}</option>)}
+            </select>
+          )}
+        </div>
       </div>
 
       {tasks === null ? (
@@ -121,18 +135,16 @@ export default function Tasks() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Task</th><th>HQ</th><th>Assignee</th><th>Freq</th><th>Category</th><th>Head</th><th>Due</th><th>Status</th><th></th>
+                <th>Task</th><th>Assignee</th><th>Activity Category</th><th>Frequency</th><th>Due</th><th>Status</th><th></th>
               </tr>
             </thead>
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id}>
                   <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</td>
-                  <td>{t.hq || "—"}</td>
                   <td>{t.assignee || "—"}</td>
-                  <td>{t.frequency}</td>
-                  <td>{CATEGORY_LABELS[t.category] || t.category}</td>
-                  <td><HeadBadge head={t.head} /></td>
+                  <td>{t.activity_category || (CATEGORY_LABELS[t.category] || "—")}</td>
+                  <td>{t.frequency_label || (meta.frequency_labels && meta.frequency_labels[t.frequency]) || t.frequency}</td>
                   <td>{t.due_date || "—"}</td>
                   <td><StatusBadge status={t.status} /></td>
                   <td><Link className="btn btn-outline btn-sm" to={`/tasks/${t.id}`}>Open</Link></td>
@@ -153,7 +165,7 @@ export default function Tasks() {
         <UploadModal
           endpoint="/tasks/upload"
           title="Upload Task Sheet"
-          hint="Expected columns: Task Name, Description, Assignee, Role, HQ, Frequency, Start/Due Date, Category, Target Amount, Reporting Due Date."
+          hint="Columns are matched flexibly: Assignee, Task Name, Description, Frequency (Daily/Weekly/Monthly/Quarterly/Ongoing/Per CME schedule…), Start / Due Date, Category (activity area), Reporting Due Date. HQ, Role and Target Amount are optional. A title row above the headers is fine."
           onClose={() => { setShowUpload(false); closeModals(); }}
           onDone={() => load()}
         />
@@ -166,7 +178,7 @@ function CreateTaskModal({ onClose, onCreated }) {
   const toast = useToast();
   const [form, setForm] = useState({
     title: "", description: "", assignee: "", role: "", hq: "",
-    frequency: "weekly", category: "task", head: "",
+    frequency: "Monthly", activity_category: "", category: "task", head: "",
     start_date: "", due_date: "", reporting_due_date: "", target_amount: "",
   });
   const [busy, setBusy] = useState(false);
@@ -215,12 +227,17 @@ function CreateTaskModal({ onClose, onCreated }) {
           </div>
           <div className="field">
             <label className="field-label">Frequency</label>
-            <select className="select" value={form.frequency} onChange={(e) => set("frequency", e.target.value)}>
-              {FREQUENCIES.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
+            <input className="input" list="freq-options" value={form.frequency} onChange={(e) => set("frequency", e.target.value)} placeholder="e.g. Monthly, Per CME schedule" />
+            <datalist id="freq-options">
+              {FREQUENCY_OPTIONS.map((f) => <option key={f} value={f} />)}
+            </datalist>
           </div>
           <div className="field">
-            <label className="field-label">Category</label>
+            <label className="field-label">Activity Category</label>
+            <input className="input" value={form.activity_category} onChange={(e) => set("activity_category", e.target.value)} placeholder="e.g. CME planning" />
+          </div>
+          <div className="field">
+            <label className="field-label">Type</label>
             <select className="select" value={form.category} onChange={(e) => set("category", e.target.value)}>
               {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
             </select>
