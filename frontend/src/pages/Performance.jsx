@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts";
 import { api, apiErrorMessage } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { useToast } from "../context/ToastContext";
@@ -148,37 +148,78 @@ function TerritoriesView({ month }) {
   if (!data) return <Loader />;
   if (data.regions.length === 0) return <EmptyState text="No territory data for this month." />;
 
+  const regionChart = data.regions.map((r) => ({
+    region: r.region, Target: r.target_total ?? 0, Sales: r.sales_total ?? 0,
+  }));
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {data.regions.map((r) => (
-        <div key={r.region} className="card card-pad">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <h3 style={{ margin: 0 }}>{r.region}</h3>
-            <span className="badge badge-brand">{r.achievement_pct != null ? `${r.achievement_pct}%` : "—"}</span>
-          </div>
-          <div className="scroll-x">
-            <table className="data-table">
-              <thead>
-                <tr><th>HQ</th><th>BE/KAM</th><th>Target</th><th>W1</th><th>W2</th><th>W3</th><th>W4</th><th>Ach %</th></tr>
-              </thead>
-              <tbody>
-                {r.items.map((it, i) => (
-                  <tr key={i}>
-                    <td>{it.hq}</td>
-                    <td>{it.be_name || "—"}</td>
-                    <td>{it.target ?? "—"}</td>
-                    <td>{it.w1 ?? "—"}</td>
-                    <td>{it.w2 ?? "—"}</td>
-                    <td>{it.w3 ?? "—"}</td>
-                    <td>{it.w4 ?? "—"}</td>
-                    <td>{it.achievement_pct != null ? `${it.achievement_pct}%` : "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {data.regions.length > 1 && (
+        <div className="card card-pad">
+          <h3>Target vs Sales by Region</h3>
+          <div style={{ height: 260 }}>
+            <ResponsiveContainer>
+              <BarChart data={regionChart} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="region" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="Target" fill="#94a3b8" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="Sales" fill="#0a6ac2" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
-      ))}
+      )}
+
+      {data.regions.map((r) => {
+        const hqChart = r.items.map((it) => ({
+          hq: it.hq, Target: it.target ?? 0, Sales: it.sales_total ?? 0,
+        }));
+        return (
+          <div key={r.region} className="card card-pad">
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <h3 style={{ margin: 0 }}>{r.region}</h3>
+              <span className="badge badge-brand">{r.achievement_pct != null ? `${r.achievement_pct}%` : "—"}</span>
+            </div>
+            <div style={{ height: 200, marginBottom: 12 }}>
+              <ResponsiveContainer>
+                <BarChart data={hqChart} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="hq" tick={{ fontSize: 11 }} interval={0} angle={-15} textAnchor="end" height={50} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="Target" fill="#94a3b8" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                  <Bar dataKey="Sales" fill="#0a6ac2" radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="scroll-x">
+              <table className="data-table">
+                <thead>
+                  <tr><th>HQ</th><th>BE/KAM</th><th>Target</th><th>W1</th><th>W2</th><th>W3</th><th>W4</th><th>Ach %</th></tr>
+                </thead>
+                <tbody>
+                  {r.items.map((it, i) => (
+                    <tr key={i}>
+                      <td>{it.hq}</td>
+                      <td>{it.be_name || "—"}</td>
+                      <td>{it.target ?? "—"}</td>
+                      <td>{it.w1 ?? "—"}</td>
+                      <td>{it.w2 ?? "—"}</td>
+                      <td>{it.w3 ?? "—"}</td>
+                      <td>{it.w4 ?? "—"}</td>
+                      <td>{it.achievement_pct != null ? `${it.achievement_pct}%` : "—"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -203,24 +244,57 @@ function ManagementView({ month }) {
   if (!data) return <Loader />;
   if (!data.metrics) return <EmptyState text="No management dashboard data for this month." />;
 
+  const entries = Object.entries(data.metrics);
+  const isNumeric = (m) => m.total != null || (m.weeks || []).some((w) => typeof w === "number");
+  const numericMetrics = entries.filter(([, m]) => isNumeric(m));
+  const textMetrics = entries.filter(([, m]) => !isNumeric(m));
+
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14 }}>
-      {Object.entries(data.metrics).map(([key, m]) => (
-        <div key={key} className="card card-pad">
-          <h3>{MGMT_LABELS[key] || key}</h3>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 13 }}>
-            {(m.weeks || []).map((w, i) => (
-              <div key={i}>
-                <div style={{ color: "var(--ink-500)", fontSize: 11 }}>W{i + 1}</div>
-                <div style={{ fontWeight: 700 }}>{w ?? "—"}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px,1fr))", gap: 14 }}>
+        {numericMetrics.map(([key, m]) => {
+          const chart = (m.weeks || []).map((w, i) => ({ week: `W${i + 1}`, value: typeof w === "number" ? w : null }));
+          return (
+            <div key={key} className="card card-pad">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
+                <h3 style={{ margin: 0 }}>{MGMT_LABELS[key] || key}</h3>
+                {m.total != null && (
+                  <span style={{ fontSize: 18, fontWeight: 800, color: "var(--brand-700)" }}>{m.total}</span>
+                )}
               </div>
-            ))}
-          </div>
-          {m.total != null && (
-            <div style={{ marginTop: 10, fontSize: 20, fontWeight: 800, color: "var(--brand-700)" }}>{m.total}</div>
-          )}
+              <div style={{ height: 160 }}>
+                <ResponsiveContainer>
+                  <LineChart data={chart} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="week" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="value" name={MGMT_LABELS[key] || key} stroke="#0a6ac2" strokeWidth={2.5} dot={{ r: 4 }} connectNulls />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {textMetrics.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px,1fr))", gap: 14 }}>
+          {textMetrics.map(([key, m]) => (
+            <div key={key} className="card card-pad">
+              <h3>{MGMT_LABELS[key] || key}</h3>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap", fontSize: 13 }}>
+                {(m.weeks || []).map((w, i) => (
+                  <div key={i}>
+                    <div style={{ color: "var(--ink-500)", fontSize: 11 }}>W{i + 1}</div>
+                    <div style={{ fontWeight: 700 }}>{w ?? "—"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }
