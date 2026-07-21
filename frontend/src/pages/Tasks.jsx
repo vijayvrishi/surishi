@@ -135,17 +135,18 @@ export default function Tasks() {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Task</th><th>Assignee</th><th>Activity Category</th><th>Frequency</th><th>Due</th><th>Status</th><th></th>
+                <th>Assignee</th><th>Task Name</th><th>Frequency</th><th>Start / Due</th><th>Category</th><th>Reporting Due</th><th>Status</th><th></th>
               </tr>
             </thead>
             <tbody>
               {tasks.map((t) => (
                 <tr key={t.id}>
-                  <td style={{ maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</td>
                   <td>{t.assignee || "—"}</td>
-                  <td>{t.activity_category || (CATEGORY_LABELS[t.category] || "—")}</td>
+                  <td style={{ maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }}>{t.title}</td>
                   <td>{t.frequency_label || (meta.frequency_labels && meta.frequency_labels[t.frequency]) || t.frequency}</td>
                   <td>{t.due_date || "—"}</td>
+                  <td>{t.activity_category || (CATEGORY_LABELS[t.category] || "—")}</td>
+                  <td>{t.reporting_due_date || "—"}</td>
                   <td>
                     <StatusBadge status={t.status} />
                     {t.units && t.units.length > 0 && (
@@ -184,10 +185,11 @@ export default function Tasks() {
 function CreateTaskModal({ onClose, onCreated }) {
   const toast = useToast();
   const [form, setForm] = useState({
-    title: "", description: "", assignee: "", role: "", hq: "",
-    frequency: "Monthly", activity_category: "", category: "task", head: "", units: "",
-    start_date: "", due_date: "", reporting_due_date: "", target_amount: "",
+    assignee: "", title: "", description: "",
+    frequency: "Monthly", start_due_date: "", activity_category: "", reporting_due_date: "",
+    role: "", hq: "", category: "task", head: "", units: "", target_amount: "",
   });
+  const [showOptional, setShowOptional] = useState(false);
   const [busy, setBusy] = useState(false);
 
   function set(key, val) { setForm((f) => ({ ...f, [key]: val })); }
@@ -197,6 +199,9 @@ function CreateTaskModal({ onClose, onCreated }) {
     setBusy(true);
     try {
       const payload = { ...form };
+      // "Start / Due Date" maps to the task's due date (as in the sheet)
+      payload.due_date = form.start_due_date || null;
+      delete payload.start_due_date;
       payload.target_amount = payload.target_amount ? parseFloat(payload.target_amount) : null;
       payload.units = form.units
         ? form.units.split(/[,;\n]+/).map((u) => u.trim()).filter(Boolean)
@@ -214,36 +219,20 @@ function CreateTaskModal({ onClose, onCreated }) {
   return (
     <Modal title="New Task" onClose={onClose} width={560}>
       <form onSubmit={submit}>
+        {/* Fields mirror the task sheet columns, in order */}
         <div className="field">
-          <label className="field-label">Title *</label>
+          <label className="field-label">Assignee</label>
+          <input className="input" value={form.assignee} onChange={(e) => set("assignee", e.target.value)} placeholder="e.g. GM, BM, AGM, CEO" />
+        </div>
+        <div className="field">
+          <label className="field-label">Task Name *</label>
           <input className="input" required value={form.title} onChange={(e) => set("title", e.target.value)} />
         </div>
         <div className="field">
           <label className="field-label">Description</label>
           <textarea className="textarea" value={form.description} onChange={(e) => set("description", e.target.value)} />
         </div>
-        <div className="field">
-          <label className="field-label">Assignees / HQs who must each complete it (optional)</label>
-          <textarea
-            className="textarea"
-            value={form.units}
-            onChange={(e) => set("units", e.target.value)}
-            placeholder="One per line or comma-separated, e.g. Jaipur BM, Udaipur BM, Kota BM. Leave blank for a single-status task."
-          />
-        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-          <div className="field">
-            <label className="field-label">Assignee</label>
-            <input className="input" value={form.assignee} onChange={(e) => set("assignee", e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="field-label">Role</label>
-            <input className="input" value={form.role} onChange={(e) => set("role", e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="field-label">HQ</label>
-            <input className="input" value={form.hq} onChange={(e) => set("hq", e.target.value)} />
-          </div>
           <div className="field">
             <label className="field-label">Frequency</label>
             <input className="input" list="freq-options" value={form.frequency} onChange={(e) => set("frequency", e.target.value)} placeholder="e.g. Monthly, Per CME schedule" />
@@ -252,41 +241,64 @@ function CreateTaskModal({ onClose, onCreated }) {
             </datalist>
           </div>
           <div className="field">
-            <label className="field-label">Activity Category</label>
-            <input className="input" value={form.activity_category} onChange={(e) => set("activity_category", e.target.value)} placeholder="e.g. CME planning" />
+            <label className="field-label">Start / Due Date</label>
+            <input className="input" type="date" value={form.start_due_date} onChange={(e) => set("start_due_date", e.target.value)} />
           </div>
           <div className="field">
-            <label className="field-label">Type</label>
-            <select className="select" value={form.category} onChange={(e) => set("category", e.target.value)}>
-              {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label className="field-label">Activity Head</label>
-            <select className="select" value={form.head} onChange={(e) => set("head", e.target.value)}>
-              <option value="">—</option>
-              {HEADS.map((h) => <option key={h} value={h}>{HEAD_LABELS[h]}</option>)}
-            </select>
-          </div>
-          <div className="field">
-            <label className="field-label">Start Date</label>
-            <input className="input" type="date" value={form.start_date} onChange={(e) => set("start_date", e.target.value)} />
-          </div>
-          <div className="field">
-            <label className="field-label">Due Date</label>
-            <input className="input" type="date" value={form.due_date} onChange={(e) => set("due_date", e.target.value)} />
+            <label className="field-label">Category</label>
+            <input className="input" value={form.activity_category} onChange={(e) => set("activity_category", e.target.value)} placeholder="e.g. CME planning, Collections" />
           </div>
           <div className="field">
             <label className="field-label">Reporting Due Date</label>
             <input className="input" type="date" value={form.reporting_due_date} onChange={(e) => set("reporting_due_date", e.target.value)} />
           </div>
-          {form.category !== "task" && (
-            <div className="field">
-              <label className="field-label">Target Amount</label>
-              <input className="input" type="number" step="0.01" value={form.target_amount} onChange={(e) => set("target_amount", e.target.value)} />
-            </div>
-          )}
         </div>
+
+        <button type="button" className="btn btn-outline btn-sm" style={{ marginBottom: 14 }} onClick={() => setShowOptional((s) => !s)}>
+          {showOptional ? "− Hide" : "+ Show"} optional details (per-assignee, HQ, sales target…)
+        </button>
+
+        {showOptional && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+            <div className="field" style={{ gridColumn: "1 / -1" }}>
+              <label className="field-label">Assignees / HQs who must each complete it</label>
+              <textarea
+                className="textarea"
+                value={form.units}
+                onChange={(e) => set("units", e.target.value)}
+                placeholder="One per line or comma-separated, e.g. Jaipur BM, Udaipur BM, Kota BM. Leave blank for a single-status task."
+              />
+            </div>
+            <div className="field">
+              <label className="field-label">Role</label>
+              <input className="input" value={form.role} onChange={(e) => set("role", e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">HQ</label>
+              <input className="input" value={form.hq} onChange={(e) => set("hq", e.target.value)} />
+            </div>
+            <div className="field">
+              <label className="field-label">Type</label>
+              <select className="select" value={form.category} onChange={(e) => set("category", e.target.value)}>
+                {CATEGORIES.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label className="field-label">Activity Head</label>
+              <select className="select" value={form.head} onChange={(e) => set("head", e.target.value)}>
+                <option value="">—</option>
+                {HEADS.map((h) => <option key={h} value={h}>{HEAD_LABELS[h]}</option>)}
+              </select>
+            </div>
+            {form.category !== "task" && (
+              <div className="field">
+                <label className="field-label">Target Amount</label>
+                <input className="input" type="number" step="0.01" value={form.target_amount} onChange={(e) => set("target_amount", e.target.value)} />
+              </div>
+            )}
+          </div>
+        )}
+
         <button className="btn btn-primary" type="submit" style={{ width: "100%" }} disabled={busy}>
           {busy ? "Creating…" : "Create Task"}
         </button>
