@@ -38,6 +38,18 @@ export default function Users() {
     }
   }
 
+  async function handleClearData() {
+    if (!window.confirm("Delete ALL tasks and ALL uploaded performance sheets? Users are kept. This cannot be undone.")) return;
+    if (!window.confirm("Are you absolutely sure? Every task and uploaded sheet will be permanently removed.")) return;
+    try {
+      const res = await api.delete("/admin/data");
+      const perf = Object.values(res.data.performance_deleted || {}).reduce((a, b) => a + b, 0);
+      toast.success(`Cleared ${res.data.tasks_deleted} tasks and ${perf} performance rows`);
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  }
+
   if (users === null) return <Loader />;
 
   return (
@@ -96,6 +108,14 @@ export default function Users() {
             ))}
           </tbody>
         </table>
+      </div>
+
+      <div className="card card-pad" style={{ marginTop: 20, borderLeft: "4px solid var(--danger)" }}>
+        <h3 style={{ color: "var(--danger)" }}>Danger Zone</h3>
+        <p style={{ fontSize: 13.5, color: "var(--ink-700)", marginBottom: 12 }}>
+          Permanently delete <b>all tasks</b> and <b>all uploaded performance sheets</b>. User accounts are kept. This cannot be undone.
+        </p>
+        <button className="btn btn-danger" onClick={handleClearData}>Clear all tasks &amp; uploaded data</button>
       </div>
 
       {editUser && (

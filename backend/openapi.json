@@ -410,6 +410,28 @@
         }
       }
     },
+    "/api/admin/data": {
+      "delete": {
+        "summary": "Admin Clear Data",
+        "description": "Delete every task and all uploaded performance sheets. Users are kept.\nAlso clears the task-sheet seed marker so nothing repopulates.",
+        "operationId": "admin_clear_data_api_admin_data_delete",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/tasks": {
       "post": {
         "summary": "Create Task",

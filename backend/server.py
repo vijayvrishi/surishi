@@ -562,6 +562,18 @@ async def admin_delete_user(user_id: str, admin: dict = Depends(require_user_man
     return {"deleted": True}
 
 
+@api_router.delete("/admin/data")
+async def admin_clear_data(admin: dict = Depends(require_user_manager)):
+    """Delete every task and all uploaded performance sheets. Users are kept.
+    Also clears the task-sheet seed marker so nothing repopulates."""
+    tasks_deleted = (await db.tasks.delete_many({})).deleted_count
+    perf_deleted = {}
+    for key, coll in PERF_COLLECTIONS.items():
+        perf_deleted[key] = (await db[coll].delete_many({})).deleted_count
+    await db.app_meta.delete_one({"key": "seed_task_sheet"})
+    return {"tasks_deleted": tasks_deleted, "performance_deleted": perf_deleted}
+
+
 # ------------------- Task routes -------------------
 @api_router.post("/tasks")
 async def create_task(req: TaskCreate, user: dict = Depends(get_current_user)):
@@ -1462,8 +1474,11 @@ SEED_MARKER = "task_sheet_v1"
 
 async def seed_task_sheet():
     """Load the standard task sheet's tasks once, the first time the app runs.
+    Opt-in via SEED_TASK_SHEET=1 (default off, so the app starts empty).
     Guarded by a marker in app_meta so restarts never duplicate, and so tasks
     the admin later deletes do not reappear."""
+    if os.environ.get("SEED_TASK_SHEET", "").lower() not in ("1", "true", "yes"):
+        return
     marker = await db.app_meta.find_one({"key": "seed_task_sheet"})
     if marker and marker.get("version") == SEED_MARKER:
         return
