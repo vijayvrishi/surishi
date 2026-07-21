@@ -971,15 +971,16 @@ def parse_brand_sheet(ws, month: str) -> List[dict]:
 
         target = to_float(g(1))
         weeks = [to_float(g(i)) for i in (2, 3, 4, 5)]
-        final = next((w for w in reversed(weeks) if w is not None), None)
-        ach = round(final / target * 100, 1) if (target and final is not None) else None
+        # Whole-month sales = sum of all four weeks, not just the last one entered
+        total = sum(w for w in weeks if w is not None) if any(w is not None for w in weeks) else None
+        ach = round(total / target * 100, 1) if (target and total is not None) else None
         docs.append({
             "id": str(uuid.uuid4()),
             "month": month,
             "brand": brand,
             "target": target,
             "w1": weeks[0], "w2": weeks[1], "w3": weeks[2], "w4": weeks[3],
-            "sales_total": final,
+            "sales_total": total,
             "achievement_pct": ach,
             "growth": str(g(6)).strip() if g(6) is not None else None,
             "top_territory": str(g(7)).strip() if g(7) is not None else None,
@@ -1053,10 +1054,11 @@ def parse_territory_sheet(ws, month: str) -> List[dict]:
             continue
         target = to_float(g(3))
         weeks = [to_float(g(i)) for i in (4, 5, 6, 7)]
-        final = next((w for w in reversed(weeks) if w is not None), None)
-        ach = to_float(g(8))
-        if ach is None and target and final is not None:
-            ach = final / target * 100
+        # Whole-month sales = sum of all four weeks, not just the last one entered
+        total = sum(w for w in weeks if w is not None) if any(w is not None for w in weeks) else None
+        ach = to_float(g(8))  # prefer an explicit "Ach %" column from the sheet if present
+        if ach is None and target and total is not None:
+            ach = total / target * 100
         docs.append({
             "id": str(uuid.uuid4()),
             "month": month,
@@ -1066,7 +1068,7 @@ def parse_territory_sheet(ws, month: str) -> List[dict]:
             "doj": parse_excel_date(g(2)),
             "target": target,
             "w1": weeks[0], "w2": weeks[1], "w3": weeks[2], "w4": weeks[3],
-            "sales_total": final,
+            "sales_total": total,
             "achievement_pct": round(ach, 1) if ach is not None else None,
         })
     return docs
