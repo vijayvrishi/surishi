@@ -134,8 +134,18 @@ function BrandsView({ month }) {
   );
 }
 
+function PeriodToggle({ mode, setMode }) {
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <button className={`chip ${mode === "month" ? "active" : ""}`} onClick={() => setMode("month")}>Selected Month</button>
+      <button className={`chip ${mode === "trend" ? "active" : ""}`} onClick={() => setMode("trend")}>Across Periods</button>
+    </div>
+  );
+}
+
 function TerritoriesView({ month }) {
   const toast = useToast();
+  const [mode, setMode] = useState("month");
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -145,8 +155,17 @@ function TerritoriesView({ month }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
-  if (!data) return <Loader />;
-  if (data.regions.length === 0) return <EmptyState text="No territory data for this month." />;
+  if (mode === "trend") {
+    return (
+      <div>
+        <PeriodToggle mode={mode} setMode={setMode} />
+        <TerritoriesTrend />
+      </div>
+    );
+  }
+
+  if (!data) return <><PeriodToggle mode={mode} setMode={setMode} /><Loader /></>;
+  if (data.regions.length === 0) return <><PeriodToggle mode={mode} setMode={setMode} /><EmptyState text="No territory data for this month." /></>;
 
   const regionChart = data.regions.map((r) => ({
     region: r.region, Target: r.target_total ?? 0, Sales: r.sales_total ?? 0,
@@ -154,6 +173,7 @@ function TerritoriesView({ month }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <PeriodToggle mode={mode} setMode={setMode} />
       {data.regions.length > 1 && (
         <div className="card card-pad">
           <h3>Target vs Sales by Region</h3>
@@ -224,6 +244,56 @@ function TerritoriesView({ month }) {
   );
 }
 
+const TREND_COLORS = ["#0a6ac2", "#c98f12", "#16a34a", "#dc2626", "#7c3aed", "#0891b2", "#db2777"];
+
+function TerritoriesTrend() {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    api.get("/performance/territories/trend").then((res) => setData(res.data)).catch((e) => toast.error(apiErrorMessage(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!data) return <Loader />;
+  if (!data.regions.length || data.months.length < 1) return <EmptyState text="No territory data uploaded yet." />;
+
+  // one combined chart: region sales across months
+  const rows = data.months.map((m) => {
+    const row = { month: monthLabel(m) };
+    data.regions.forEach((r) => {
+      const pt = r.series.find((s) => s.month === m);
+      row[r.region] = pt ? pt.sales : null;
+    });
+    return row;
+  });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="card card-pad">
+        <h3>Region Sales Across Periods</h3>
+        {data.months.length < 2 && (
+          <p style={{ fontSize: 12.5, color: "var(--ink-500)", marginBottom: 8 }}>Upload more months to see the trend build up.</p>
+        )}
+        <div style={{ height: 300 }}>
+          <ResponsiveContainer>
+            <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 12 }} />
+              <Tooltip />
+              <Legend />
+              {data.regions.map((r, i) => (
+                <Line key={r.region} type="monotone" dataKey={r.region} stroke={TREND_COLORS[i % TREND_COLORS.length]} strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const MGMT_LABELS = {
   primary_sales: "Primary Sales", secondary_sales: "Secondary Sales", run_rate: "Run Rate",
   active_doctors: "Active Doctors", new_prescribers: "New Prescribers",
@@ -232,6 +302,7 @@ const MGMT_LABELS = {
 
 function ManagementView({ month }) {
   const toast = useToast();
+  const [mode, setMode] = useState("month");
   const [data, setData] = useState(null);
 
   useEffect(() => {
@@ -241,8 +312,17 @@ function ManagementView({ month }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
-  if (!data) return <Loader />;
-  if (!data.metrics) return <EmptyState text="No management dashboard data for this month." />;
+  if (mode === "trend") {
+    return (
+      <div>
+        <PeriodToggle mode={mode} setMode={setMode} />
+        <ManagementTrend />
+      </div>
+    );
+  }
+
+  if (!data) return <><PeriodToggle mode={mode} setMode={setMode} /><Loader /></>;
+  if (!data.metrics) return <><PeriodToggle mode={mode} setMode={setMode} /><EmptyState text="No management dashboard data for this month." /></>;
 
   const entries = Object.entries(data.metrics);
   const isNumeric = (m) => m.total != null || (m.weeks || []).some((w) => typeof w === "number");
@@ -251,6 +331,7 @@ function ManagementView({ month }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <PeriodToggle mode={mode} setMode={setMode} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px,1fr))", gap: 14 }}>
         {numericMetrics.map(([key, m]) => {
           const chart = (m.weeks || []).map((w, i) => ({ week: `W${i + 1}`, value: typeof w === "number" ? w : null }));
@@ -295,6 +376,49 @@ function ManagementView({ month }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function ManagementTrend() {
+  const toast = useToast();
+  const [data, setData] = useState(null);
+
+  useEffect(() => {
+    api.get("/performance/management/trend").then((res) => setData(res.data)).catch((e) => toast.error(apiErrorMessage(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  if (!data) return <Loader />;
+  const keys = Object.keys(data.metrics || {});
+  if (!keys.length) return <EmptyState text="No management data uploaded yet." />;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {data.months.length < 2 && (
+        <p style={{ fontSize: 12.5, color: "var(--ink-500)" }}>Upload more months to see the trend build up.</p>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px,1fr))", gap: 14 }}>
+        {keys.map((key, i) => {
+          const rows = data.metrics[key].map((s) => ({ month: monthLabel(s.month), value: s.value }));
+          return (
+            <div key={key} className="card card-pad">
+              <h3>{MGMT_LABELS[key] || key} — Across Periods</h3>
+              <div style={{ height: 200 }}>
+                <ResponsiveContainer>
+                  <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 4, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                    <YAxis tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Line type="monotone" dataKey="value" name={MGMT_LABELS[key] || key} stroke={TREND_COLORS[i % TREND_COLORS.length]} strokeWidth={2.5} dot={{ r: 4 }} connectNulls isAnimationActive={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

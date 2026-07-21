@@ -1185,6 +1185,61 @@ async def performance_management(month: Optional[str] = None, user: dict = Depen
     return {"month": month, "metrics": (doc or {}).get("metrics")}
 
 
+@api_router.get("/performance/territories/trend")
+async def territories_trend(user: dict = Depends(require_feature("performance"))):
+    """Region target/sales across every uploaded month (period-wise trend)."""
+    items = await db.territory_performance.find({}, {"_id": 0}).to_list(5000)
+    months = sorted({i["month"] for i in items})
+    regions = {}
+    for it in items:
+        reg = it.get("region") or "Other"
+        by = regions.setdefault(reg, {})
+        cell = by.setdefault(it["month"], {"target": 0.0, "sales": 0.0})
+        cell["target"] += it.get("target") or 0
+        cell["sales"] += it.get("sales_total") or 0
+    out = []
+    for reg, by in regions.items():
+        series = []
+        for m in months:
+            c = by.get(m)
+            tgt = round(c["target"], 2) if c else None
+            sal = round(c["sales"], 2) if c else None
+            series.append({"month": m, "target": tgt, "sales": sal,
+                           "achievement_pct": round(sal / tgt * 100, 1) if (tgt and sal is not None) else None})
+        out.append({"region": reg, "series": series})
+    out.sort(key=lambda r: r["region"])
+    return {"months": months, "regions": out}
+
+
+MGMT_NUMERIC_KEYS = ["primary_sales", "secondary_sales", "run_rate", "active_doctors", "new_prescribers"]
+
+
+@api_router.get("/performance/management/trend")
+async def management_trend(user: dict = Depends(require_feature("performance"))):
+    """Each numeric management metric across every uploaded month."""
+    docs = await db.management_dashboard.find({}, {"_id": 0}).to_list(1000)
+    months = sorted({d["month"] for d in docs})
+    by_month = {d["month"]: (d.get("metrics") or {}) for d in docs}
+    metrics = {}
+    for k in MGMT_NUMERIC_KEYS:
+        series = []
+        present = False
+        for m in months:
+            mt = by_month.get(m, {}).get(k)
+            val = None
+            if mt:
+                val = mt.get("total")
+                if val is None:
+                    weeks = [w for w in (mt.get("weeks") or []) if isinstance(w, (int, float))]
+                    val = weeks[-1] if weeks else None
+                if val is not None:
+                    present = True
+            series.append({"month": m, "value": val})
+        if present:
+            metrics[k] = series
+    return {"months": months, "metrics": metrics}
+
+
 async def compute_brand_growth() -> dict:
     items = await db.brand_performance.find({}, {"_id": 0}).to_list(2000)
     months = sorted({i["month"] for i in items})

@@ -1284,6 +1284,50 @@
         }
       }
     },
+    "/api/performance/territories/trend": {
+      "get": {
+        "summary": "Territories Trend",
+        "description": "Region target/sales across every uploaded month (period-wise trend).",
+        "operationId": "territories_trend_api_performance_territories_trend_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/performance/management/trend": {
+      "get": {
+        "summary": "Management Trend",
+        "description": "Each numeric management metric across every uploaded month.",
+        "operationId": "management_trend_api_performance_management_trend_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/performance/growth": {
       "get": {
         "summary": "Performance Growth",
