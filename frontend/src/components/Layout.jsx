@@ -3,17 +3,17 @@ import { useAuth, ROLE_LABELS } from "../context/AuthContext";
 import { useEffect, useState } from "react";
 
 const NAV_ITEMS = [
-  { to: "/", label: "Dashboard", icon: "📊", end: true },
-  { to: "/tasks", label: "Tasks", icon: "✅" },
-  { to: "/performance", label: "Performance", icon: "📈" },
-  { to: "/reports", label: "Reports", icon: "📄" },
-  { to: "/profile", label: "Profile", icon: "👤" },
+  { to: "/", label: "Dashboard", icon: "📊", end: true, feature: "dashboard" },
+  { to: "/tasks", label: "Tasks", icon: "✅", feature: "tasks" },
+  { to: "/performance", label: "Performance", icon: "📈", feature: "performance" },
+  { to: "/reports", label: "Reports", icon: "📄", feature: "reports" },
+  { to: "/profile", label: "Profile", icon: "👤" }, // always visible
 ];
 
 const MOBILE_QUERY = "(max-width: 768px)";
 
 export default function Layout() {
-  const { user, logout, isUserManager } = useAuth();
+  const { user, logout, isUserManager, hasFeature } = useAuth();
   const navigate = useNavigate();
   const [isMobile, setIsMobile] = useState(() => window.matchMedia(MOBILE_QUERY).matches);
   const [sidebarOpen, setSidebarOpen] = useState(() =>
@@ -48,9 +48,10 @@ export default function Layout() {
     navigate("/login");
   }
 
+  const visibleNav = NAV_ITEMS.filter((it) => !it.feature || hasFeature(it.feature));
   const items = isUserManager
-    ? [...NAV_ITEMS, { to: "/users", label: "Users", icon: "🛡️" }]
-    : NAV_ITEMS;
+    ? [...visibleNav, { to: "/users", label: "Users & Access", icon: "🛡️" }]
+    : visibleNav;
 
   const sidebarStyle = isMobile
     ? {

@@ -112,7 +112,19 @@ Territories (grouped by region with totals), Management (KPI cards),
 
 ### 3.6 Profile & User Management
 Profile: user info, admin shortcuts, change password, logout.
-Users screen (chairman): edit role/name/HQ, reset password, delete.
+Users & Access screen (chairman): edit role/name/HQ, reset password, delete;
+plus **Feature Access** and a Danger Zone (clear all data).
+
+### 3.7 Feature Access (chairman-controlled RBAC)
+The chairman decides, per role, which features (Dashboard, Tasks, Performance,
+Reports) each role can see, via a role × feature checkbox matrix on the Users &
+Access screen (`GET/PUT /api/admin/permissions`). Profile is always visible;
+Users & Access is chairman-only; the chairman always has full access. Access is
+enforced on the **backend** — the relevant endpoints are gated with a
+`require_feature(...)` dependency returning 403 — and reflected in the UI: the
+sidebar hides disallowed features and direct navigation to a hidden route
+redirects to the user's first allowed screen. Each client reads its own allowed
+set from `GET /api/me/features`. Defaults to all-on for every role.
 
 ## 4. Architecture
 
@@ -150,7 +162,7 @@ Full schema: `backend/openapi.json` / live Swagger at `/docs`.
 | Area | Endpoints |
 |---|---|
 | Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password` |
-| Users | `GET /api/users`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}`, `GET/DELETE /api/admin/reset-requests[/{id}]` |
+| Users | `GET /api/users`, `GET /api/me/features`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}`, `GET/DELETE /api/admin/reset-requests[/{id}]`, `GET/PUT /api/admin/permissions`, `DELETE /api/admin/data` |
 | Tasks | `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/{id}`, `PATCH /api/tasks/{id}/completion` (per-assignee), `POST /api/tasks/upload`, photos: `POST /api/tasks/{id}/photos`, `DELETE /api/tasks/{id}/photos/{photoId}` |
 | Dashboard/Reports | `GET /api/dashboard`, `GET /api/reports?period=`, `GET /api/reports/pdf?period=`, `GET /api/meta/filters` |
 | Performance | `POST /api/performance/upload`, `GET /api/performance/months|brands|territories|management|growth` |

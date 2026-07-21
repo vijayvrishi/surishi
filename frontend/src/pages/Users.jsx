@@ -54,7 +54,10 @@ export default function Users() {
 
   return (
     <div>
-      <h1>User Management</h1>
+      <h1>Users &amp; Access</h1>
+
+      <FeatureAccessCard />
+
 
       {resetRequests.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 16, borderLeft: "4px solid var(--gold-600)" }}>
@@ -205,5 +208,83 @@ function ResetPasswordModal({ user, onClose }) {
         </button>
       </form>
     </Modal>
+  );
+}
+
+function FeatureAccessCard() {
+  const toast = useToast();
+  const { loadFeatures } = useAuth();
+  const [data, setData] = useState(null);
+  const [perms, setPerms] = useState({});
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.get("/admin/permissions").then((res) => {
+      setData(res.data);
+      setPerms(res.data.permissions || {});
+    }).catch((e) => toast.error(apiErrorMessage(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function toggle(role, feature) {
+    setPerms((p) => {
+      const cur = new Set(p[role] || []);
+      cur.has(feature) ? cur.delete(feature) : cur.add(feature);
+      return { ...p, [role]: [...cur] };
+    });
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      await api.put("/admin/permissions", { permissions: perms });
+      await loadFeatures(); // refresh own nav in case chairman changed something
+      toast.success("Feature access saved");
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!data) return null;
+
+  return (
+    <div className="card card-pad" style={{ marginBottom: 16, borderLeft: "4px solid var(--brand-700)" }}>
+      <h3>Feature Access</h3>
+      <p style={{ fontSize: 13, color: "var(--ink-500)", marginBottom: 12 }}>
+        Choose which features each role can see. Chairman always has full access; Profile is always visible.
+      </p>
+      <div className="scroll-x">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Role</th>
+              {data.features.map((f) => <th key={f} style={{ textAlign: "center" }}>{data.labels[f]}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {data.roles.map((role) => (
+              <tr key={role}>
+                <td style={{ fontWeight: 600 }}>{data.role_labels[role]}</td>
+                {data.features.map((f) => (
+                  <td key={f} style={{ textAlign: "center" }}>
+                    <input
+                      type="checkbox"
+                      style={{ width: 18, height: 18, cursor: "pointer" }}
+                      checked={(perms[role] || []).includes(f)}
+                      onChange={() => toggle(role, f)}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <button className="btn btn-primary" style={{ marginTop: 14 }} onClick={save} disabled={busy}>
+        {busy ? "Saving…" : "Save Feature Access"}
+      </button>
+    </div>
   );
 }

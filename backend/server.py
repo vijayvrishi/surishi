@@ -59,6 +59,11 @@ ROLES = [
 ]
 ADMIN_ROLES = {"marketing_head", "marketing_deputy_head", "chairman"}
 USER_MANAGER_ROLES = {"chairman"}
+# Features whose visibility the chairman controls per role (Profile is always on;
+# Users/permissions are chairman-only regardless).
+FEATURES = ["dashboard", "tasks", "performance", "reports"]
+FEATURE_LABELS = {"dashboard": "Dashboard", "tasks": "Tasks",
+                  "performance": "Performance", "reports": "Reports"}
 CATEGORIES = ["task", "sales_collection", "target"]
 STATUSES = ["pending", "in_progress", "completed"]
 HEADS = ["company", "scientific_inputs", "engagement"]
@@ -142,6 +147,11 @@ class AdminResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class PermissionsUpdate(BaseModel):
+    # role -> list of visible feature keys
+    permissions: dict
+
+
 class ForgotPasswordRequest(BaseModel):
     email: EmailStr
 
@@ -183,6 +193,38 @@ async def require_user_manager(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in USER_MANAGER_ROLES:
         raise HTTPException(status_code=403, detail="Only Chairman can manage users")
     return user
+
+
+# ------------------- Feature access (chairman-controlled) -------------------
+async def get_feature_permissions() -> dict:
+    """Role -> list of visible features. Missing/unknown roles default to all on."""
+    doc = await db.app_meta.find_one({"key": "feature_permissions"})
+    stored = (doc or {}).get("value") or {}
+    out = {}
+    for role in ROLES:
+        if role == "chairman":
+            out[role] = list(FEATURES)  # chairman always sees everything
+        else:
+            feats = stored.get(role)
+            out[role] = [f for f in feats if f in FEATURES] if isinstance(feats, list) else list(FEATURES)
+    return out
+
+
+async def features_for_user(user: dict) -> list:
+    if user.get("role") == "chairman":
+        return list(FEATURES)
+    perms = await get_feature_permissions()
+    return perms.get(user.get("role"), list(FEATURES))
+
+
+def require_feature(feature: str):
+    async def dep(user: dict = Depends(get_current_user)) -> dict:
+        if user.get("role") == "chairman":
+            return user
+        if feature not in await features_for_user(user):
+            raise HTTPException(status_code=403, detail=f"Your role does not have access to {FEATURE_LABELS.get(feature, feature)}")
+        return user
+    return dep
 
 
 # ------------------- Date helpers -------------------
@@ -471,6 +513,17 @@ async def me(user: dict = Depends(get_current_user)):
     return UserPublic(**{k: user.get(k) for k in ("id", "name", "email", "role", "hq")})
 
 
+@api_router.get("/me/features")
+async def my_features(user: dict = Depends(get_current_user)):
+    """The features the current user is allowed to see (drives the nav)."""
+    return {
+        "features": await features_for_user(user),
+        "all_features": FEATURES,
+        "labels": FEATURE_LABELS,
+        "is_user_manager": user.get("role") in USER_MANAGER_ROLES,
+    }
+
+
 @api_router.post("/auth/change-password")
 async def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current_user)):
     doc = await db.users.find_one({"id": user["id"]})
@@ -537,6 +590,34 @@ async def admin_reset_password(user_id: str, req: AdminResetPasswordRequest, adm
     return {"detail": "Password reset successfully"}
 
 
+@api_router.get("/admin/permissions")
+async def get_permissions(admin: dict = Depends(require_user_manager)):
+    """Full role → features matrix for the chairman to edit."""
+    return {
+        "features": FEATURES,
+        "labels": FEATURE_LABELS,
+        "roles": [r for r in ROLES if r != "chairman"],
+        "role_labels": {r: r.replace("_", " ").title() for r in ROLES},
+        "permissions": {r: v for r, v in (await get_feature_permissions()).items() if r != "chairman"},
+    }
+
+
+@api_router.put("/admin/permissions")
+async def set_permissions(req: PermissionsUpdate, admin: dict = Depends(require_user_manager)):
+    cleaned = {}
+    for role, feats in (req.permissions or {}).items():
+        if role in ROLES and role != "chairman":
+            cleaned[role] = [f for f in (feats or []) if f in FEATURES]
+    await db.app_meta.update_one(
+        {"key": "feature_permissions"},
+        {"$set": {"key": "feature_permissions", "value": cleaned,
+                  "updated_at": datetime.now(timezone.utc).isoformat(),
+                  "updated_by": admin.get("name")}},
+        upsert=True,
+    )
+    return {"permissions": {r: v for r, v in (await get_feature_permissions()).items() if r != "chairman"}}
+
+
 @api_router.get("/admin/reset-requests")
 async def list_reset_requests(admin: dict = Depends(require_user_manager)):
     return await db.password_reset_requests.find(
@@ -576,7 +657,7 @@ async def admin_clear_data(admin: dict = Depends(require_user_manager)):
 
 # ------------------- Task routes -------------------
 @api_router.post("/tasks")
-async def create_task(req: TaskCreate, user: dict = Depends(get_current_user)):
+async def create_task(req: TaskCreate, user: dict = Depends(require_feature("tasks"))):
     data = req.model_dump()
     data["units"] = parse_units(data.get("units"))
     data["activity_category"] = clean_str(data.get("activity_category"))
@@ -607,7 +688,7 @@ async def list_tasks(
     role: Optional[str] = None,
     period: Optional[str] = None,
     search: Optional[str] = None,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_feature("tasks")),
 ):
     query = {}
     if frequency:
@@ -643,7 +724,7 @@ async def list_tasks(
 
 
 @api_router.get("/tasks/{task_id}")
-async def get_task(task_id: str, user: dict = Depends(get_current_user)):
+async def get_task(task_id: str, user: dict = Depends(require_feature("tasks"))):
     task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -651,7 +732,7 @@ async def get_task(task_id: str, user: dict = Depends(get_current_user)):
 
 
 @api_router.patch("/tasks/{task_id}")
-async def update_task(task_id: str, req: TaskUpdate, user: dict = Depends(get_current_user)):
+async def update_task(task_id: str, req: TaskUpdate, user: dict = Depends(require_feature("tasks"))):
     task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -1044,7 +1125,7 @@ async def upload_performance(file: UploadFile = File(...), user: dict = Depends(
 
 
 @api_router.get("/performance/months")
-async def performance_months(user: dict = Depends(get_current_user)):
+async def performance_months(user: dict = Depends(require_feature("performance"))):
     out = {}
     all_months = set()
     for key, coll in PERF_COLLECTIONS.items():
@@ -1056,7 +1137,7 @@ async def performance_months(user: dict = Depends(get_current_user)):
 
 
 @api_router.get("/performance/brands")
-async def performance_brands(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def performance_brands(month: Optional[str] = None, user: dict = Depends(require_feature("performance"))):
     if not month:
         months = await db.brand_performance.distinct("month")
         if not months:
@@ -1068,7 +1149,7 @@ async def performance_brands(month: Optional[str] = None, user: dict = Depends(g
 
 
 @api_router.get("/performance/territories")
-async def performance_territories(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def performance_territories(month: Optional[str] = None, user: dict = Depends(require_feature("performance"))):
     if not month:
         months = await db.territory_performance.distinct("month")
         if not months:
@@ -1094,7 +1175,7 @@ async def performance_territories(month: Optional[str] = None, user: dict = Depe
 
 
 @api_router.get("/performance/management")
-async def performance_management(month: Optional[str] = None, user: dict = Depends(get_current_user)):
+async def performance_management(month: Optional[str] = None, user: dict = Depends(require_feature("performance"))):
     if not month:
         months = await db.management_dashboard.distinct("month")
         if not months:
@@ -1142,7 +1223,7 @@ async def compute_brand_growth() -> dict:
 
 
 @api_router.get("/performance/growth")
-async def performance_growth(user: dict = Depends(get_current_user)):
+async def performance_growth(user: dict = Depends(require_feature("performance"))):
     return await compute_brand_growth()
 
 
@@ -1197,7 +1278,7 @@ def sales_summary(tasks: List[dict]):
 
 
 @api_router.get("/dashboard")
-async def dashboard(user: dict = Depends(get_current_user)):
+async def dashboard(user: dict = Depends(require_feature("dashboard"))):
     start, end = period_range("month")
     month_tasks = await db.tasks.find(
         {"due_date": {"$gte": start, "$lte": end}}, {"_id": 0, "photos": 0}).to_list(2000)
@@ -1239,12 +1320,12 @@ async def build_report(period: str) -> dict:
 
 
 @api_router.get("/reports")
-async def reports(period: str = "month", user: dict = Depends(get_current_user)):
+async def reports(period: str = "month", user: dict = Depends(require_feature("reports"))):
     return await build_report(period)
 
 
 @api_router.get("/reports/pdf")
-async def reports_pdf(period: str = "month", user: dict = Depends(get_current_user)):
+async def reports_pdf(period: str = "month", user: dict = Depends(require_feature("reports"))):
     from fastapi.responses import Response
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors as rl

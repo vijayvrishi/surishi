@@ -105,6 +105,28 @@
         ]
       }
     },
+    "/api/me/features": {
+      "get": {
+        "summary": "My Features",
+        "description": "The features the current user is allowed to see (drives the nav).",
+        "operationId": "my_features_api_me_features_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
     "/api/auth/change-password": {
       "post": {
         "summary": "Change Password",
@@ -345,6 +367,67 @@
             }
           }
         }
+      }
+    },
+    "/api/admin/permissions": {
+      "get": {
+        "summary": "Get Permissions",
+        "description": "Full role \u2192 features matrix for the chairman to edit.",
+        "operationId": "get_permissions_api_admin_permissions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      },
+      "put": {
+        "summary": "Set Permissions",
+        "operationId": "set_permissions_api_admin_permissions_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PermissionsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
       }
     },
     "/api/admin/reset-requests": {
@@ -1532,6 +1615,20 @@
           "password"
         ],
         "title": "LoginRequest"
+      },
+      "PermissionsUpdate": {
+        "properties": {
+          "permissions": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Permissions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "permissions"
+        ],
+        "title": "PermissionsUpdate"
       },
       "PhotoUpload": {
         "properties": {

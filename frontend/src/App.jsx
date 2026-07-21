@@ -23,7 +23,27 @@ function PrivateRoute({ children }) {
 function UserManagerRoute({ children }) {
   const { isUserManager, loading } = useAuth();
   if (loading) return <div className="center-page"><Loader /></div>;
-  if (!isUserManager) return <Navigate to="/" replace />;
+  if (!isUserManager) return <Navigate to={firstAllowedPath()} replace />;
+  return children;
+}
+
+const FEATURE_PATHS = [
+  ["dashboard", "/"],
+  ["tasks", "/tasks"],
+  ["performance", "/performance"],
+  ["reports", "/reports"],
+];
+
+function firstAllowedPath(hasFeature) {
+  if (!hasFeature) return "/profile";
+  const hit = FEATURE_PATHS.find(([f]) => hasFeature(f));
+  return hit ? hit[1] : "/profile";
+}
+
+function FeatureRoute({ feature, children }) {
+  const { hasFeature, loading } = useAuth();
+  if (loading) return <div className="center-page"><Loader /></div>;
+  if (!hasFeature(feature)) return <Navigate to={firstAllowedPath(hasFeature)} replace />;
   return children;
 }
 
@@ -46,11 +66,11 @@ function AppRoutes() {
           </PrivateRoute>
         }
       >
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/tasks" element={<Tasks />} />
-        <Route path="/tasks/:id" element={<TaskDetail />} />
-        <Route path="/reports" element={<Reports />} />
-        <Route path="/performance" element={<Performance />} />
+        <Route path="/" element={<FeatureRoute feature="dashboard"><Dashboard /></FeatureRoute>} />
+        <Route path="/tasks" element={<FeatureRoute feature="tasks"><Tasks /></FeatureRoute>} />
+        <Route path="/tasks/:id" element={<FeatureRoute feature="tasks"><TaskDetail /></FeatureRoute>} />
+        <Route path="/reports" element={<FeatureRoute feature="reports"><Reports /></FeatureRoute>} />
+        <Route path="/performance" element={<FeatureRoute feature="performance"><Performance /></FeatureRoute>} />
         <Route path="/profile" element={<Profile />} />
         <Route
           path="/users"

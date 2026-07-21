@@ -6,12 +6,22 @@ const AuthContext = createContext(null);
 const ADMIN_ROLES = new Set(["marketing_head", "marketing_deputy_head", "chairman"]);
 const USER_MANAGER_ROLES = new Set(["chairman"]);
 
+const ALL_FEATURES = ["dashboard", "tasks", "performance", "reports"];
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     const raw = localStorage.getItem("surishi_user");
     return raw ? JSON.parse(raw) : null;
   });
+  const [features, setFeatures] = useState(ALL_FEATURES);
   const [loading, setLoading] = useState(true);
+
+  const loadFeatures = useCallback(() => {
+    return api
+      .get("/me/features")
+      .then((res) => setFeatures(res.data.features || ALL_FEATURES))
+      .catch(() => setFeatures(ALL_FEATURES));
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem("surishi_token");
@@ -19,27 +29,26 @@ export function AuthProvider({ children }) {
       setLoading(false);
       return;
     }
-    api
-      .get("/auth/me")
-      .then((res) => {
-        setUser(res.data);
-        localStorage.setItem("surishi_user", JSON.stringify(res.data));
-      })
+    Promise.all([api.get("/auth/me").then((res) => {
+      setUser(res.data);
+      localStorage.setItem("surishi_user", JSON.stringify(res.data));
+    }), loadFeatures()])
       .catch(() => {
         localStorage.removeItem("surishi_token");
         localStorage.removeItem("surishi_user");
         setUser(null);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadFeatures]);
 
   const login = useCallback(async (email, password) => {
     const res = await api.post("/auth/login", { email, password });
     localStorage.setItem("surishi_token", res.data.access_token);
     localStorage.setItem("surishi_user", JSON.stringify(res.data.user));
     setUser(res.data.user);
+    await loadFeatures();
     return res.data.user;
-  }, []);
+  }, [loadFeatures]);
 
   const register = useCallback(async (payload) => {
     const res = await api.post("/auth/register", payload);
@@ -57,10 +66,14 @@ export function AuthProvider({ children }) {
 
   const isAdmin = !!user && ADMIN_ROLES.has(user.role);
   const isUserManager = !!user && USER_MANAGER_ROLES.has(user.role);
+  const hasFeature = useCallback(
+    (f) => !user || user.role === "chairman" || features.includes(f),
+    [user, features]
+  );
 
   return (
     <AuthContext.Provider
-      value={{ user, setUser, loading, login, register, logout, isAdmin, isUserManager }}
+      value={{ user, setUser, loading, login, register, logout, isAdmin, isUserManager, features, hasFeature, loadFeatures }}
     >
       {children}
     </AuthContext.Provider>
