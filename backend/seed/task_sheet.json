@@ -1,0 +1,290 @@
+[
+  {
+    "assignee": "CEO",
+    "title": "GM review",
+    "description": "Conduct monthly GM review",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "Leadership review",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "CEO",
+    "title": "New Product Development",
+    "description": "Review and progress new product development",
+    "frequency": "Ongoing",
+    "due_date": null,
+    "activity_category": "Leadership & planning",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "CEO",
+    "title": "Recruitment approvals",
+    "description": "Review and approve recruitment requirements",
+    "frequency": "Ongoing",
+    "due_date": null,
+    "activity_category": "Leadership & planning",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "CEO",
+    "title": "Budget allocation",
+    "description": "Allocate FY 2025–26 budget; see Budget & Cash Flow tab",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "Leadership & planning",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "CEO",
+    "title": "Manufacturer order finalization",
+    "description": "Finalize manufacturer orders",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "Operations",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "CRM analysis",
+    "description": "Review CRM analysis and action points",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "CRM & analytics",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "CME planning",
+    "description": "Plan CME activity and coordinate execution",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "CME planning",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "Speaker finalization",
+    "description": "Finalize CME speaker(s)",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "CME planning",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "CME invitation card distribution",
+    "description": "Disburse CME invitation cards through the team",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "CME planning",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "CME team task allocation",
+    "description": "Allocate tasks to team members during the CME",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "CME execution",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "Post-CME top doctor visit",
+    "description": "Plan and complete post-CME visits to top doctors",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "Post-CME follow-up",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "Mitov sample disbursement & doctor visits",
+    "description": "Disburse Mitov samples and complete doctor visits",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "Doctor engagement",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "AGM",
+    "title": "New Doctor Conversion",
+    "description": "Guide and tract the manager wise doctor  conversion",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": null,
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "Sehat Sathi Samman implementation",
+    "description": "Plan and implement Sehat Sathi Samman activity",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "Raftaar Doctor Meet implementation",
+    "description": "Plan and implement Raftaar Doctor Meet activity",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "CME activity implementation",
+    "description": "Coordinate and implement BM-level CME activities",
+    "frequency": "Per CME schedule",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "CRM activity implementation",
+    "description": "Implement assigned CRM activities",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "Power Brunch implementation",
+    "description": "Plan and implement Power Brunch activity",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "OPD Camp implementation",
+    "description": "Plan and implement OPD Camp activity",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "Birthday activity implementation",
+    "description": "Execute doctor / stakeholder birthday activity",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "Clinic Anniversary implementation",
+    "description": "Execute clinic anniversary activity",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "BM",
+    "title": "Other BM activity implementation",
+    "description": "Plan and implement other assigned BM activities",
+    "frequency": "Monthly",
+    "due_date": null,
+    "activity_category": "BM activity implementation",
+    "reporting_due_date": null
+  },
+  {
+    "assignee": "GM",
+    "title": "TP deviation analysis",
+    "description": "Analyse TP deviations and send mail to senior managers",
+    "frequency": "Monthly",
+    "due_date": "2026-07-25",
+    "activity_category": "Sales analysis",
+    "reporting_due_date": "2026-07-25"
+  },
+  {
+    "assignee": "GM",
+    "title": "Sales closing",
+    "description": "Complete monthly sales closing",
+    "frequency": "Monthly",
+    "due_date": "2026-07-30",
+    "activity_category": "Sales closing",
+    "reporting_due_date": "2026-07-30"
+  },
+  {
+    "assignee": "GM",
+    "title": "Secondary sales update in CBO",
+    "description": "Update secondary sales in CBO",
+    "frequency": "Monthly",
+    "due_date": "2026-07-03",
+    "activity_category": "Sales reporting",
+    "reporting_due_date": "2026-07-03"
+  },
+  {
+    "assignee": "GM",
+    "title": "Online managers’ review",
+    "description": "Conduct online review of managers based on sales performance",
+    "frequency": "Monthly",
+    "due_date": "2026-07-05",
+    "activity_category": "Sales review",
+    "reporting_due_date": "2026-07-06"
+  },
+  {
+    "assignee": "GM",
+    "title": "Indent & dispatch compilation",
+    "description": "Compile indent and dispatch data and submit",
+    "frequency": "Monthly",
+    "due_date": "2026-07-06",
+    "activity_category": "Operations reporting",
+    "reporting_due_date": "2026-07-06"
+  },
+  {
+    "assignee": "GM",
+    "title": "Collection review – 10th",
+    "description": "Day-end final report analysis and manager follow-up for collections",
+    "frequency": "Monthly",
+    "due_date": "2026-07-10",
+    "activity_category": "Collections",
+    "reporting_due_date": "2026-07-10"
+  },
+  {
+    "assignee": "GM",
+    "title": "Collection review – 20th",
+    "description": "Day-end final report analysis and manager follow-up for collections",
+    "frequency": "Monthly",
+    "due_date": "2026-07-20",
+    "activity_category": "Collections",
+    "reporting_due_date": "2026-07-20"
+  },
+  {
+    "assignee": "GM",
+    "title": "Collection review – 30th",
+    "description": "Day-end final report analysis and manager follow-up for collections",
+    "frequency": "Monthly",
+    "due_date": "2026-07-30",
+    "activity_category": "Collections",
+    "reporting_due_date": "2026-07-30"
+  },
+  {
+    "assignee": "GM",
+    "title": "Expense analysis",
+    "description": "Analyse monthly expenses",
+    "frequency": "Monthly",
+    "due_date": "2026-07-02",
+    "activity_category": "Expense analysis",
+    "reporting_due_date": "2026-07-02"
+  },
+  {
+    "assignee": "GM",
+    "title": "Incentive calculation",
+    "description": "Calculate monthly incentives",
+    "frequency": "Monthly",
+    "due_date": "2026-07-25",
+    "activity_category": "Incentives",
+    "reporting_due_date": "2026-07-25"
+  }
+]

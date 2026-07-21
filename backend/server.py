@@ -1454,6 +1454,55 @@ async def seed_users():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
     logger.info("Demo users seeded")
+    await seed_task_sheet()
+
+
+SEED_MARKER = "task_sheet_v1"
+
+
+async def seed_task_sheet():
+    """Load the standard task sheet's tasks once, the first time the app runs.
+    Guarded by a marker in app_meta so restarts never duplicate, and so tasks
+    the admin later deletes do not reappear."""
+    marker = await db.app_meta.find_one({"key": "seed_task_sheet"})
+    if marker and marker.get("version") == SEED_MARKER:
+        return
+    path = ROOT_DIR / "seed" / "task_sheet.json"
+    if not path.exists():
+        return
+    try:
+        import json as _json
+        rows = _json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Could not read task sheet seed: %s", e)
+        return
+    system_user = await db.users.find_one({"email": "chairman@surishi.in"}) \
+        or await db.users.find_one({"role": "chairman"})
+    created_by = system_user["id"] if system_user else "system"
+    docs = []
+    for r in rows:
+        data = {
+            "title": r.get("title"),
+            "description": r.get("description"),
+            "assignee": r.get("assignee"),
+            "activity_category": r.get("activity_category"),
+            "frequency": norm_frequency(r.get("frequency")),
+            "frequency_label": r.get("frequency"),
+            "due_date": r.get("due_date"),
+            "reporting_due_date": r.get("reporting_due_date"),
+        }
+        doc = task_doc(data, created_by)
+        doc["seed"] = SEED_MARKER
+        docs.append(doc)
+    if docs:
+        await db.tasks.insert_many([dict(d) for d in docs])
+    await db.app_meta.update_one(
+        {"key": "seed_task_sheet"},
+        {"$set": {"key": "seed_task_sheet", "version": SEED_MARKER,
+                  "count": len(docs), "seeded_at": datetime.now(timezone.utc).isoformat()}},
+        upsert=True,
+    )
+    logger.info("Task sheet seeded: %d tasks", len(docs))
 
 
 app.include_router(api_router)
