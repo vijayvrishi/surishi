@@ -1054,11 +1054,12 @@ def parse_territory_sheet(ws, month: str) -> List[dict]:
             continue
         target = to_float(g(3))
         weeks = [to_float(g(i)) for i in (4, 5, 6, 7)]
-        # Whole-month sales = sum of all four weeks, not just the last one entered
+        # Whole-month sales = sum of all four weeks, not just the last one entered.
+        # Always computed from the weeks ourselves — a sheet's own "Ach %" column
+        # (if present) is ignored, since it may have been computed differently
+        # (e.g. last-week-only) by whoever built the source spreadsheet.
         total = sum(w for w in weeks if w is not None) if any(w is not None for w in weeks) else None
-        ach = to_float(g(8))  # prefer an explicit "Ach %" column from the sheet if present
-        if ach is None and target and total is not None:
-            ach = total / target * 100
+        ach = round(total / target * 100, 1) if (target and total is not None) else None
         docs.append({
             "id": str(uuid.uuid4()),
             "month": month,
