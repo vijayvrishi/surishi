@@ -1079,15 +1079,95 @@ PERF_COLLECTIONS = {"brand": "brand_performance", "territory": "territory_perfor
                     "management": "management_dashboard"}
 
 
+# ------------------- PowerPoint performance sheets -------------------
+# Performance decks are sometimes shared as PowerPoint slides (one table per
+# slide) instead of Excel. These adapters make a PPTX file look like an
+# openpyxl workbook/worksheet — same .sheetnames / wb[name] / ws.iter_rows()
+# surface — so it can flow through the exact same detect_perf_type /
+# parse_brand_sheet / parse_territory_sheet / parse_mgmt_sheet logic as Excel.
+class _RowsSheet:
+    def __init__(self, rows):
+        self._rows = rows
+
+    def iter_rows(self, values_only=True, max_row=None):
+        rows = self._rows[:max_row] if max_row else self._rows
+        for r in rows:
+            yield r
+
+
+class _RowsWorkbook:
+    def __init__(self, sheets: dict):
+        self._sheets = sheets
+
+    @property
+    def sheetnames(self):
+        return list(self._sheets.keys())
+
+    def __getitem__(self, name):
+        return self._sheets[name]
+
+
+def _pptx_slide_table_rows(table) -> list:
+    rows = []
+    for row in table.rows:
+        # Normalize python-pptx's "" empty cells to None to match openpyxl's
+        # semantics, since every downstream parser checks `is None`.
+        rows.append(tuple((cell.text.strip() or None) for cell in row.cells))
+    return rows
+
+
+def load_perf_workbook(filename: str, contents: bytes):
+    """Load an Excel or PowerPoint performance file into a workbook-like object."""
+    name = (filename or "").lower()
+    if name.endswith((".xlsx", ".xlsm")):
+        try:
+            return load_workbook(filename=BytesIO(contents), data_only=True)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not read the Excel file. Please check the format.")
+    if name.endswith(".pptx"):
+        try:
+            from pptx import Presentation
+        except ImportError:
+            raise HTTPException(status_code=400, detail="PowerPoint support is not available on this server.")
+        try:
+            prs = Presentation(BytesIO(contents))
+        except Exception:
+            raise HTTPException(status_code=400, detail="Could not read the PowerPoint file. Please check the format.")
+        sheets = {}
+        for idx, slide in enumerate(prs.slides, start=1):
+            texts = []
+            title_shape = slide.shapes.title
+            if title_shape is not None and title_shape.has_text_frame:
+                t = title_shape.text_frame.text.strip()
+                if t:
+                    texts.append(t)
+            for shape in slide.shapes:
+                if shape.has_text_frame and shape is not title_shape:
+                    t = shape.text_frame.text.strip()
+                    if t:
+                        texts.append(t)
+            tables = [_pptx_slide_table_rows(shape.table) for shape in slide.shapes if shape.has_table]
+            if not tables:
+                continue
+            base_name = " ".join(texts) if texts else f"Slide {idx}"
+            for t_idx, rows in enumerate(tables):
+                key = base_name if t_idx == 0 else f"{base_name} ({t_idx + 1})"
+                suffix = 1
+                unique_key = key
+                while unique_key in sheets:
+                    suffix += 1
+                    unique_key = f"{key} #{suffix}"
+                sheets[unique_key] = _RowsSheet(rows)
+        return _RowsWorkbook(sheets)
+    raise HTTPException(status_code=400, detail="Only .xlsx Excel or .pptx PowerPoint files are supported")
+
+
 @api_router.post("/performance/upload")
 async def upload_performance(file: UploadFile = File(...), user: dict = Depends(require_admin)):
-    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
-        raise HTTPException(status_code=400, detail="Only .xlsx Excel files are supported")
+    if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm", ".pptx")):
+        raise HTTPException(status_code=400, detail="Only .xlsx Excel or .pptx PowerPoint files are supported")
     contents = await file.read()
-    try:
-        wb = load_workbook(filename=BytesIO(contents), data_only=True)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Could not read the Excel file. Please check the format.")
+    wb = load_perf_workbook(file.filename, contents)
 
     ptype = detect_perf_type(wb)
     if ptype is None:
@@ -1101,7 +1181,7 @@ async def upload_performance(file: UploadFile = File(...), user: dict = Depends(
     months_parsed = []
     total_inserted = 0
     for sn in wb.sheetnames:
-        month = parse_sheet_month(sn)
+        month = parse_sheet_month(sn) or parse_sheet_month(file.filename or "")
         if month is None:
             continue
         ws = wb[sn]

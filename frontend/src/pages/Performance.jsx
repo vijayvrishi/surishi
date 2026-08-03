@@ -71,7 +71,8 @@ export default function Performance() {
         <UploadModal
           endpoint="/performance/upload"
           title="Upload Performance Sheet"
-          hint="Auto-detects Brand Performance, Territory Performance, or Management Dashboard format. Multiple month sheets in one workbook are all parsed."
+          hint="Excel (.xlsx) or PowerPoint (.pptx) — auto-detects Brand Performance, Territory Performance, or Management Dashboard format. Multiple month sheets/slides in one file are all parsed."
+          accept=".xlsx,.xlsm,.pptx"
           onClose={() => setShowUpload(false)}
           onDone={loadMonths}
         />

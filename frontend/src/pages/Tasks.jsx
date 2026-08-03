@@ -307,7 +307,7 @@ function CreateTaskModal({ onClose, onCreated }) {
   );
 }
 
-export function UploadModal({ endpoint, title, hint, onClose, onDone }) {
+export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = ".xlsx,.xlsm" }) {
   const toast = useToast();
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -335,7 +335,7 @@ export function UploadModal({ endpoint, title, hint, onClose, onDone }) {
     <Modal title={title} onClose={onClose}>
       <p style={{ fontSize: 13, color: "var(--ink-500)", marginBottom: 14 }}>{hint}</p>
       <form onSubmit={submit}>
-        <input className="input" type="file" accept=".xlsx,.xlsm" onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ marginBottom: 14 }} />
+        <input className="input" type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ marginBottom: 14 }} />
         <button className="btn btn-gold" type="submit" disabled={!file || busy} style={{ width: "100%" }}>
           {busy ? "Uploading…" : "Upload"}
         </button>
