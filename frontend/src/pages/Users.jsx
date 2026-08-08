@@ -11,12 +11,26 @@ export default function Users() {
   const [editUser, setEditUser] = useState(null);
   const [resetUser, setResetUser] = useState(null);
   const [resetRequests, setResetRequests] = useState([]);
+  const [pendingUsers, setPendingUsers] = useState([]);
+  const [approveUser, setApproveUser] = useState(null);
 
   function load() {
     api.get("/users").then((res) => setUsers(res.data)).catch((e) => toast.error(apiErrorMessage(e)));
     api.get("/admin/reset-requests").then((res) => setResetRequests(res.data)).catch(() => {});
+    api.get("/admin/pending-users").then((res) => setPendingUsers(res.data)).catch(() => {});
   }
   useEffect(load, []);
+
+  async function rejectPending(u) {
+    if (!window.confirm(`Reject the registration request from ${u.name} (${u.email})?`)) return;
+    try {
+      await api.delete(`/admin/pending-users/${u.id}`);
+      toast.success("Registration rejected");
+      load();
+    } catch (e) {
+      toast.error(apiErrorMessage(e));
+    }
+  }
 
   async function dismissRequest(id) {
     try {
@@ -58,6 +72,30 @@ export default function Users() {
 
       <FeatureAccessCard />
 
+      {pendingUsers.length > 0 && (
+        <div className="card card-pad" style={{ marginBottom: 16, borderLeft: "4px solid var(--brand-700)" }}>
+          <h3>Pending Registrations ({pendingUsers.length})</h3>
+          <p style={{ fontSize: 12.5, color: "var(--ink-500)", marginBottom: 10 }}>
+            New sign-ups wait here until an Admin approves them and confirms their designation.
+          </p>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {pendingUsers.map((u) => (
+              <div key={u.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 10px", background: "var(--gold-100)", borderRadius: 8, flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{u.name}</div>
+                  <div style={{ fontSize: 12, color: "var(--ink-500)" }}>
+                    {u.email} · requested {ROLE_LABELS[u.role] || u.role}{u.hq ? ` · ${u.hq}` : ""}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button className="btn btn-gold btn-sm" onClick={() => setApproveUser(u)}>Approve</button>
+                  <button className="btn btn-outline btn-sm" onClick={() => rejectPending(u)}>Reject</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {resetRequests.length > 0 && (
         <div className="card card-pad" style={{ marginBottom: 16, borderLeft: "4px solid var(--gold-600)" }}>
@@ -127,7 +165,55 @@ export default function Users() {
       {resetUser && (
         <ResetPasswordModal user={resetUser} onClose={() => { setResetUser(null); load(); }} />
       )}
+      {approveUser && (
+        <ApproveUserModal user={approveUser} onClose={() => setApproveUser(null)} onApproved={() => { setApproveUser(null); load(); }} />
+      )}
     </div>
+  );
+}
+
+function ApproveUserModal({ user, onClose, onApproved }) {
+  const toast = useToast();
+  const [role, setRole] = useState(user.role);
+  const [hq, setHq] = useState(user.hq || "");
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      await api.post(`/admin/pending-users/${user.id}/approve`, { role, hq: hq || null });
+      toast.success(`${user.name} approved`);
+      onApproved();
+    } catch (e2) {
+      toast.error(apiErrorMessage(e2));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title={`Approve ${user.name}`} onClose={onClose}>
+      <form onSubmit={submit}>
+        <p style={{ fontSize: 13, color: "var(--ink-500)", marginBottom: 12 }}>
+          {user.email} requested <b>{ROLE_LABELS[user.role] || user.role}</b>. Confirm or change the
+          designation before approving.
+        </p>
+        <div className="field">
+          <label className="field-label">Designation</label>
+          <select className="select" value={role} onChange={(e) => setRole(e.target.value)}>
+            {ROLES.map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          </select>
+        </div>
+        <div className="field">
+          <label className="field-label">HQ</label>
+          <input className="input" value={hq} onChange={(e) => setHq(e.target.value)} placeholder="e.g. Mumbai" />
+        </div>
+        <button className="btn btn-primary" type="submit" disabled={busy} style={{ width: "100%" }}>
+          {busy ? "Approving…" : "Approve & activate account"}
+        </button>
+      </form>
+    </Modal>
   );
 }
 

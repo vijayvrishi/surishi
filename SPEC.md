@@ -11,7 +11,7 @@ and periodic reporting with PDF export.
 
 ## 2. Users & Roles
 
-Eight roles, JWT email+password auth. All demo accounts seeded on backend startup
+Nine roles, JWT email+password auth. All demo accounts seeded on backend startup
 (see `memory/test_credentials.md`).
 
 | Role | Admin* | User management |
@@ -19,14 +19,36 @@ Eight roles, JWT email+password auth. All demo accounts seeded on backend startu
 | chairman | ✅ | ✅ (exclusive) |
 | marketing_head | ✅ | — |
 | marketing_deputy_head | ✅ | — |
-| product_executive, general_manager, ceo, agm, business_manager | — | — |
+| product_executive, general_manager, ceo, agm, business_manager, kam | — | — |
 
 *Admin = upload Excel sheets, create/delete tasks.
 
 - Any user: view all data, update task status, enter collected amounts, attach
   photos, change own password.
 - Chairman only: change any user's role/name/HQ, reset passwords, delete users
-  (self-delete blocked).
+  (self-delete blocked), approve/reject new registrations.
+
+### 2.1 Registration approval
+
+New self-service sign-ups no longer auto-activate. `POST /api/auth/register`
+creates the account with `status: "pending"` and the requested role, but
+returns only a confirmation message — no token. Login is blocked with 403
+("pending Admin approval") while `status == "pending"`, and pending accounts
+are excluded from `GET /api/users`. The chairman reviews requests on the
+Users & Access screen (`GET /api/admin/pending-users`) and either:
+- **Approves** (`POST /api/admin/pending-users/{id}/approve`, body
+  `{role, hq}`) — the chairman confirms or overrides the requested
+  designation before the account is set to `status: "approved"` and can log
+  in; or
+- **Rejects** (`DELETE /api/admin/pending-users/{id}`) — the pending account
+  is deleted outright.
+
+Only the chairman can assign or change a user's designation, either at
+approval time or later via the existing `PATCH /api/admin/users/{id}`.
+Accounts created before this feature shipped have no `status` field and are
+treated as already-approved — the chairman may need to manually correct any
+that were self-registered with an unauthorized role, since this system only
+prevents that from happening going forward.
 
 ## 3. Functional Modules
 
@@ -77,6 +99,15 @@ frequencies (ongoing / as-scheduled) stay undated.
   missing a task name are reported back as skipped with row numbers. Verified
   against the production task sheet (Assignee, Task Name, Description, Frequency,
   Start / Due Date, Category, Reporting Due Date).
+- **Replace Task Sheet**: every task carries a `source` (`manual` — created
+  in-app — or `sheet` — from an Excel upload or the initial seed). Uploading
+  with `POST /api/tasks/upload?replace=true` deletes all existing
+  `source: "sheet"` tasks before inserting the new file's rows, so re-uploading
+  an updated sheet replaces it instead of appending duplicates; tasks created
+  manually in-app (and their status/photos) are never touched. Guarded so a
+  file with zero valid rows is rejected with 400 rather than wiping existing
+  data. Response includes `replaced_count`. The upload modal on the Tasks
+  screen exposes this as a "Replace existing task sheet" checkbox.
 
 ### 3.3 Dashboard
 Current-month KPIs (total/completed/in-progress/pending/overdue/completion %),
@@ -161,9 +192,9 @@ Full schema: `backend/openapi.json` / live Swagger at `/docs`.
 
 | Area | Endpoints |
 |---|---|
-| Auth | `POST /api/auth/register`, `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password` |
-| Users | `GET /api/users`, `GET /api/me/features`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}`, `GET/DELETE /api/admin/reset-requests[/{id}]`, `GET/PUT /api/admin/permissions`, `DELETE /api/admin/data` |
-| Tasks | `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/{id}`, `PATCH /api/tasks/{id}/completion` (per-assignee), `POST /api/tasks/upload`, photos: `POST /api/tasks/{id}/photos`, `DELETE /api/tasks/{id}/photos/{photoId}` |
+| Auth | `POST /api/auth/register` (pending approval, no token), `POST /api/auth/login`, `GET /api/auth/me`, `POST /api/auth/change-password`, `POST /api/auth/forgot-password` |
+| Users | `GET /api/users`, `GET /api/me/features`; chairman: `PATCH /api/admin/users/{id}`, `POST /api/admin/users/{id}/reset-password`, `DELETE /api/admin/users/{id}`, `GET/DELETE /api/admin/reset-requests[/{id}]`, `GET/PUT /api/admin/permissions`, `DELETE /api/admin/data`, `GET /api/admin/pending-users`, `POST /api/admin/pending-users/{id}/approve`, `DELETE /api/admin/pending-users/{id}` |
+| Tasks | `GET/POST /api/tasks`, `GET/PATCH/DELETE /api/tasks/{id}`, `PATCH /api/tasks/{id}/completion` (per-assignee), `POST /api/tasks/upload?replace=` (replace clears prior sheet-sourced tasks), photos: `POST /api/tasks/{id}/photos`, `DELETE /api/tasks/{id}/photos/{photoId}` |
 | Dashboard/Reports | `GET /api/dashboard`, `GET /api/reports?period=`, `GET /api/reports/pdf?period=`, `GET /api/meta/filters` |
 | Performance | `POST /api/performance/upload`, `GET /api/performance/months|brands|territories|management|growth` |
 

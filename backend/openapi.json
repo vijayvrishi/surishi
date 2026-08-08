@@ -26,7 +26,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/TokenResponse"
+                  "$ref": "#/components/schemas/RegisterResponse"
                 }
               }
             }
@@ -223,6 +223,121 @@
             "HTTPBearer": []
           }
         ]
+      }
+    },
+    "/api/admin/pending-users": {
+      "get": {
+        "summary": "List Pending Users",
+        "operationId": "list_pending_users_api_admin_pending_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ]
+      }
+    },
+    "/api/admin/pending-users/{user_id}/approve": {
+      "post": {
+        "summary": "Approve User",
+        "operationId": "approve_user_api_admin_pending_users__user_id__approve_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveUserRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/pending-users/{user_id}": {
+      "delete": {
+        "summary": "Reject User",
+        "operationId": "reject_user_api_admin_pending_users__user_id__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/admin/users/{user_id}": {
@@ -1038,15 +1153,32 @@
       "post": {
         "summary": "Upload Excel",
         "operationId": "upload_excel_api_tasks_upload_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "replace",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Replace"
+            }
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "multipart/form-data": {
               "schema": {
                 "$ref": "#/components/schemas/Body_upload_excel_api_tasks_upload_post"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "200": {
@@ -1067,12 +1199,7 @@
               }
             }
           }
-        },
-        "security": [
-          {
-            "HTTPBearer": []
-          }
-        ]
+        }
       }
     },
     "/api/performance/upload": {
@@ -1549,6 +1676,30 @@
         "type": "object",
         "title": "AdminUserUpdate"
       },
+      "ApproveUserRequest": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "hq": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hq"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role"
+        ],
+        "title": "ApproveUserRequest"
+      },
       "Body_upload_excel_api_tasks_upload_post": {
         "properties": {
           "file": {
@@ -1738,6 +1889,19 @@
           "role"
         ],
         "title": "RegisterRequest"
+      },
+      "RegisterResponse": {
+        "properties": {
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "detail"
+        ],
+        "title": "RegisterResponse"
       },
       "TaskCreate": {
         "properties": {

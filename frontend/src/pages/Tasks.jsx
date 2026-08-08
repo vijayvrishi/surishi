@@ -174,6 +174,7 @@ export default function Tasks() {
           endpoint="/tasks/upload"
           title="Upload Task Sheet"
           hint="Columns are matched flexibly: Assignee, Task Name, Description, Frequency (Daily/Weekly/Monthly/Quarterly/Ongoing/Per CME schedule…), Start / Due Date, Category (activity area), Reporting Due Date. HQ, Role and Target Amount are optional. A title row above the headers is fine."
+          allowReplace
           onClose={() => { setShowUpload(false); closeModals(); }}
           onDone={() => load()}
         />
@@ -307,9 +308,10 @@ function CreateTaskModal({ onClose, onCreated }) {
   );
 }
 
-export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = ".xlsx,.xlsm" }) {
+export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = ".xlsx,.xlsm", allowReplace = false }) {
   const toast = useToast();
   const [file, setFile] = useState(null);
+  const [replace, setReplace] = useState(false);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
 
@@ -320,7 +322,8 @@ export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = "
     try {
       const fd = new FormData();
       fd.append("file", file);
-      const res = await api.post(endpoint, fd, { headers: { "Content-Type": "multipart/form-data" } });
+      const url = allowReplace && replace ? `${endpoint}?replace=true` : endpoint;
+      const res = await api.post(url, fd, { headers: { "Content-Type": "multipart/form-data" } });
       setResult(res.data);
       onDone();
       toast.success("Upload complete");
@@ -336,6 +339,18 @@ export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = "
       <p style={{ fontSize: 13, color: "var(--ink-500)", marginBottom: 14 }}>{hint}</p>
       <form onSubmit={submit}>
         <input className="input" type="file" accept={accept} onChange={(e) => setFile(e.target.files?.[0] || null)} style={{ marginBottom: 14 }} />
+        {allowReplace && (
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, fontSize: 13, marginBottom: 14, cursor: "pointer" }}>
+            <input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>
+              <b>Replace existing task sheet</b>
+              <div style={{ fontSize: 12, color: "var(--ink-500)" }}>
+                Removes tasks from previous sheet uploads before adding these, so updated rows don't create
+                duplicates. Manually created tasks are never affected.
+              </div>
+            </span>
+          </label>
+        )}
         <button className="btn btn-gold" type="submit" disabled={!file || busy} style={{ width: "100%" }}>
           {busy ? "Uploading…" : "Upload"}
         </button>
@@ -345,6 +360,11 @@ export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = "
           <div style={{ color: "var(--success)", fontWeight: 700 }}>
             {result.inserted_count != null ? `${result.inserted_count} rows inserted` : `${result.type} data: ${result.inserted_count} rows across ${result.months?.join(", ")}`}
           </div>
+          {result.replaced_count != null && (
+            <div style={{ marginTop: 4, color: "var(--ink-700)" }}>
+              {result.replaced_count} prior sheet task(s) removed.
+            </div>
+          )}
           {result.skipped?.length > 0 && (
             <div style={{ marginTop: 8, color: "var(--warn)" }}>
               {result.skipped.length} row(s) skipped:

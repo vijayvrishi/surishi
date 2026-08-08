@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 # ------------------- Constants -------------------
 ROLES = [
     "marketing_head", "marketing_deputy_head", "product_executive",
-    "general_manager", "ceo", "chairman", "agm", "business_manager",
+    "general_manager", "ceo", "chairman", "agm", "business_manager", "kam",
 ]
 ADMIN_ROLES = {"marketing_head", "marketing_deputy_head", "chairman"}
 USER_MANAGER_ROLES = {"chairman"}
@@ -99,6 +99,15 @@ class UserPublic(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     user: UserPublic
+
+
+class RegisterResponse(BaseModel):
+    detail: str
+
+
+class ApproveUserRequest(BaseModel):
+    role: str
+    hq: Optional[str] = None
 
 
 class TaskCreate(BaseModel):
@@ -423,7 +432,7 @@ def derive_completion(completions: list):
     return status, round(completed / total * 100, 1), completed, total
 
 
-def task_doc(data: dict, created_by: str) -> dict:
+def task_doc(data: dict, created_by: str, source: str = "manual") -> dict:
     now = datetime.now(timezone.utc).isoformat()
     freq = data.get("frequency") or "monthly"
     # Anchor undated recurring tasks to the first day of the concerned period
@@ -460,6 +469,7 @@ def task_doc(data: dict, created_by: str) -> dict:
         "collected_amount": data.get("collected_amount"),
         "status": status,
         "month": due[:7] if due else None,
+        "source": source,  # "manual" (created in-app) | "sheet" (Excel upload or the seeded task sheet)
         "created_by": created_by,
         "created_at": now,
         "updated_at": now,
@@ -478,7 +488,7 @@ def find_header_row(rows) -> int:
 
 
 # ------------------- Auth routes -------------------
-@api_router.post("/auth/register", response_model=TokenResponse)
+@api_router.post("/auth/register", response_model=RegisterResponse)
 async def register(req: RegisterRequest):
     if req.role not in ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
@@ -489,14 +499,17 @@ async def register(req: RegisterRequest):
         "id": str(uuid.uuid4()),
         "name": req.name.strip(),
         "email": req.email.lower(),
-        "role": req.role,
+        "role": req.role,  # requested designation — chairman confirms/changes it on approval
         "hq": req.hq,
+        "status": "pending",
         "password_hash": pwd_hash.hash(req.password),
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     await db.users.insert_one(dict(user))
-    public = UserPublic(**{k: user[k] for k in ("id", "name", "email", "role", "hq")})
-    return TokenResponse(access_token=create_token(user), user=public)
+    return RegisterResponse(
+        detail="Registration submitted. An administrator will review and approve your "
+        "account before you can sign in."
+    )
 
 
 @api_router.post("/auth/login", response_model=TokenResponse)
@@ -504,6 +517,11 @@ async def login(req: LoginRequest):
     user = await db.users.find_one({"email": req.email.lower()}, {"_id": 0})
     if not user or not verify_password(req.password, user.get("password_hash")):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    if user.get("status") == "pending":
+        raise HTTPException(
+            status_code=403,
+            detail="Your account is pending Admin approval. You'll be able to sign in once an administrator approves it.",
+        )
     public = UserPublic(**{k: user.get(k) for k in ("id", "name", "email", "role", "hq")})
     return TokenResponse(access_token=create_token(user), user=public)
 
@@ -555,8 +573,38 @@ async def forgot_password(req: ForgotPasswordRequest):
 
 @api_router.get("/users")
 async def list_users(user: dict = Depends(get_current_user)):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(500)
+    users = await db.users.find({"status": {"$ne": "pending"}}, {"_id": 0, "password_hash": 0}).to_list(500)
     return users
+
+
+# ------------------- Registration approval (Chairman only) -------------------
+@api_router.get("/admin/pending-users")
+async def list_pending_users(admin: dict = Depends(require_user_manager)):
+    return await db.users.find(
+        {"status": "pending"}, {"_id": 0, "password_hash": 0}
+    ).sort("created_at", 1).to_list(500)
+
+
+@api_router.post("/admin/pending-users/{user_id}/approve")
+async def approve_user(user_id: str, req: ApproveUserRequest, admin: dict = Depends(require_user_manager)):
+    if req.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    updates = {"status": "approved", "role": req.role}
+    if req.hq is not None:
+        updates["hq"] = req.hq
+    await db.users.update_one({"id": user_id}, {"$set": updates})
+    return await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+
+
+@api_router.delete("/admin/pending-users/{user_id}")
+async def reject_user(user_id: str, admin: dict = Depends(require_user_manager)):
+    result = await db.users.delete_one({"id": user_id, "status": "pending"})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Pending registration not found")
+    return {"deleted": True}
 
 
 # ------------------- User management (Chairman only) -------------------
@@ -841,7 +889,7 @@ async def delete_task_photo(task_id: str, photo_id: str, user: dict = Depends(ge
 
 # ------------------- Excel upload -------------------
 @api_router.post("/tasks/upload")
-async def upload_excel(file: UploadFile = File(...), user: dict = Depends(require_admin)):
+async def upload_excel(file: UploadFile = File(...), replace: bool = False, user: dict = Depends(require_admin)):
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="Only .xlsx Excel files are supported")
     contents = await file.read()
@@ -896,11 +944,25 @@ async def upload_excel(file: UploadFile = File(...), user: dict = Depends(requir
             "target_amount": to_float(cell("target_amount")),
             "collected_amount": to_float(cell("collected_amount")),
         }
-        inserted.append(task_doc(data, user["id"]))
+        inserted.append(task_doc(data, user["id"], source="sheet"))
+
+    replaced_count = None
+    if replace:
+        if not inserted:
+            raise HTTPException(
+                status_code=400,
+                detail="No valid task rows found in this file — nothing was replaced, to avoid losing existing data.",
+            )
+        # Replace only sheet-sourced tasks (prior uploads / the seeded task sheet);
+        # manually created tasks and their status/photos are left untouched.
+        replaced_count = (await db.tasks.delete_many({"source": "sheet"})).deleted_count
 
     if inserted:
         await db.tasks.insert_many([dict(d) for d in inserted])
-    return {"inserted_count": len(inserted), "skipped": skipped, "filename": file.filename}
+    return {
+        "inserted_count": len(inserted), "skipped": skipped, "filename": file.filename,
+        "replaced_count": replaced_count,
+    }
 
 
 # ------------------- Performance sheets (Brand / Territory / Management) -------------------
@@ -1725,7 +1787,7 @@ async def seed_task_sheet():
             "due_date": r.get("due_date"),
             "reporting_due_date": r.get("reporting_due_date"),
         }
-        doc = task_doc(data, created_by)
+        doc = task_doc(data, created_by, source="sheet")
         doc["seed"] = SEED_MARKER
         docs.append(doc)
     if docs:

@@ -52,10 +52,9 @@ export function AuthProvider({ children }) {
 
   const register = useCallback(async (payload) => {
     const res = await api.post("/auth/register", payload);
-    localStorage.setItem("surishi_token", res.data.access_token);
-    localStorage.setItem("surishi_user", JSON.stringify(res.data.user));
-    setUser(res.data.user);
-    return res.data.user;
+    // Registration no longer auto-authenticates — new accounts are "pending"
+    // until an Admin approves them, so no token/user is issued here.
+    return res.data;
   }, []);
 
   const logout = useCallback(() => {
@@ -95,6 +94,7 @@ export const ROLES = [
   "chairman",
   "agm",
   "business_manager",
+  "kam",
 ];
 
 export const ROLE_LABELS = {
@@ -106,4 +106,5 @@ export const ROLE_LABELS = {
   chairman: "Chairman",
   agm: "AGM",
   business_manager: "Business Manager",
+  kam: "KAM",
 };
