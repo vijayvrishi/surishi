@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { Loader, StatCard, StatusBadge, Progress, EmptyState } from "../components/UI";
 
 export default function Dashboard() {
-  const { user, isAdmin } = useAuth();
+  const { user, canCreateTasks } = useAuth();
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
 
@@ -28,7 +28,7 @@ export default function Dashboard() {
           <h1>Welcome, {user?.name?.split(" ")[0]}</h1>
           <div style={{ color: "var(--ink-500)", fontSize: 14 }}>Here's this month at a glance.</div>
         </div>
-        {isAdmin && (
+        {canCreateTasks && (
           <div style={{ display: "flex", gap: 8 }}>
             <Link to="/tasks?upload=1" className="btn btn-gold btn-sm">Upload Excel</Link>
             <Link to="/tasks?create=1" className="btn btn-primary btn-sm">+ New Task</Link>

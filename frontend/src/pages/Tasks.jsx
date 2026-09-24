@@ -13,7 +13,7 @@ const CATEGORY_LABELS = { task: "Task", sales_collection: "Sales Collection", ta
 const FREQUENCY_OPTIONS = ["Daily", "Weekly", "Monthly", "Quarterly", "Yearly", "Ongoing"];
 
 export default function Tasks() {
-  const { isAdmin } = useAuth();
+  const { canCreateTasks } = useAuth();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
   const [tasks, setTasks] = useState(null);
@@ -57,7 +57,7 @@ export default function Tasks() {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
         <h1 style={{ margin: 0 }}>Tasks</h1>
-        {isAdmin && (
+        {canCreateTasks && (
           <div style={{ display: "flex", gap: 8 }}>
             <button className="btn btn-gold btn-sm" onClick={() => setShowUpload(true)}>Upload Excel</button>
             <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ New Task</button>

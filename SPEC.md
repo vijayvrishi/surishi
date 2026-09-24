@@ -21,10 +21,18 @@ Nine roles, JWT email+password auth. All demo accounts seeded on backend startup
 | marketing_deputy_head | ✅ | — |
 | product_executive, general_manager, ceo, agm, business_manager, kam | — | — |
 
-*Admin = upload Excel sheets, create/delete tasks.
+*Admin = upload Excel sheets, create/delete tasks. The **CEO** can also create
+tasks and upload task sheets (not delete tasks or upload performance sheets).
 
-- Any user: view all data, update task status, enter collected amounts, attach
-  photos, change own password.
+- **Seniority / task visibility**: chairman > CEO > GM > marketing head = AGM >
+  marketing deputy head > business manager > product executive > KAM
+  (`ROLE_RANK` in `server.py`). A task assigned to a role (its Role/Assignee
+  text, e.g. "GM", "AGM / BM") is hidden from users junior to that role — in
+  the task list, task detail, dashboard, reports and filters. Tasks with no
+  recognisable role (people, HQs, blank) are visible to everyone; the chairman
+  and a task's creator always see it.
+- Any user: view visible tasks and performance data, update task status, enter
+  collected amounts, attach photos, change own password.
 - Chairman only: change any user's role/name/HQ, reset passwords, delete users
   (self-delete blocked), approve/reject new registrations.
 
@@ -99,6 +107,12 @@ frequencies (ongoing / as-scheduled) stay undated.
   missing a task name are reported back as skipped with row numbers. Verified
   against the production task sheet (Assignee, Task Name, Description, Frequency,
   Start / Due Date, Category, Reporting Due Date).
+- **Monthly activity plan upload**: a plan workbook (sheets "DAILY
+  COMMUNICATION…", "ACTIVITY PLANNER…", "REQUIREMENT") uploads through the same
+  endpoint and becomes tasks: one per day's doctor WhatsApp message (dated),
+  one per weekly activity drive (Week N → days 1–7, 8–14, 15–21, 22–end; extra
+  blocks span the month; full playbook in the description), and one "Arrange
+  inputs" task per requirement section listing per-MR allocations.
 - **Replace Task Sheet**: every task carries a `source` (`manual` — created
   in-app — or `sheet` — from an Excel upload or the initial seed). Uploading
   with `POST /api/tasks/upload?replace=true` deletes all existing
@@ -126,12 +140,21 @@ tasks), 5 most recent tasks, admin quick actions.
 ### 3.5 Performance Module
 Separate Excel upload (admin) that auto-detects one of three sheet formats and
 parses **all month-named tabs** in the workbook (re-upload replaces that
-month's data — idempotent):
+month's data — idempotent). A month named in a tab's title row (e.g.
+"Brand Performance-Sep") takes precedence over the tab name.
+
+**Weekly columns are cumulative month-to-date** ("Sec till 7th", "till 14th",
+…). Sales for the month = the sheet's current week (the last week column with
+any figures); a row blank in that week counts as 0 there. Achievement % =
+that ÷ target — matching the sheets' own Achievement % column. Management
+metrics with a blank TOTAL use the latest week.
 
 1. **Brand Performance** — brand, target, W1–W4 sales, computed achievement %,
    top/lowest territory.
 2. **Territory Performance** — region → HQ rows with BE/KAM name, DOJ, target,
-   weekly secondary sales, achievement %.
+   weekly secondary sales, achievement %. A region/zone label with no figures
+   heads the rows below it; a label with figures ("Total", "Indore Region",
+   "All India") is a subtotal and is not stored as a territory.
 3. **Management Dashboard** — primary/secondary sales, run rate, active
    doctors, new prescribers (weekly + total), weekly top/lowest brand and
    strong/weak territory.

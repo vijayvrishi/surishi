@@ -58,6 +58,26 @@ ROLES = [
     "general_manager", "ceo", "chairman", "agm", "business_manager", "kam",
 ]
 ADMIN_ROLES = {"marketing_head", "marketing_deputy_head", "chairman"}
+# Roles that may create tasks and upload task sheets (admins + CEO)
+TASK_CREATOR_ROLES = ADMIN_ROLES | {"ceo"}
+# Seniority, highest first. A user sees tasks owned by their own level or
+# below; tasks owned by a more senior role are hidden from them.
+ROLE_RANK = {
+    "chairman": 9, "ceo": 8, "general_manager": 7, "marketing_head": 6, "agm": 6,
+    "marketing_deputy_head": 5, "business_manager": 4, "product_executive": 3, "kam": 2,
+}
+# How roles are written in the task sheet's Assignee / Role columns
+ROLE_ALIASES = {
+    "chairman": "chairman", "ceo": "ceo",
+    "gm": "general_manager", "general manager": "general_manager",
+    "agm": "agm", "assistant general manager": "agm",
+    "marketing head": "marketing_head", "head marketing": "marketing_head", "head - marketing": "marketing_head",
+    "marketing deputy head": "marketing_deputy_head", "deputy head": "marketing_deputy_head",
+    "dy head": "marketing_deputy_head", "deputy marketing head": "marketing_deputy_head",
+    "bm": "business_manager", "business manager": "business_manager",
+    "pe": "product_executive", "product executive": "product_executive",
+    "kam": "kam", "key account manager": "kam",
+}
 USER_MANAGER_ROLES = {"chairman"}
 # Features whose visibility the chairman controls per role (Profile is always on;
 # Users/permissions are chairman-only regardless).
@@ -196,6 +216,52 @@ async def require_admin(user: dict = Depends(get_current_user)) -> dict:
     if user["role"] not in ADMIN_ROLES:
         raise HTTPException(status_code=403, detail="Only Marketing Head / Deputy Head / Chairman can perform this action")
     return user
+
+
+async def require_task_creator(user: dict = Depends(get_current_user)) -> dict:
+    if user["role"] not in TASK_CREATOR_ROLES:
+        raise HTTPException(status_code=403, detail="You are not allowed to create tasks")
+    return user
+
+
+def task_owner_roles(task: dict) -> set:
+    """Role keys a task is assigned to, read from its Role / Assignee text
+    (e.g. "GM", "AGM / BM"). Unrecognised text (people, HQs) gives no roles."""
+    out = set()
+    for field in ("role", "assignee"):
+        v = task.get(field)
+        if not v:
+            continue
+        if v in ROLE_RANK:
+            out.add(v)
+            continue
+        for part in re.split(r"[,/&+;\n]+|\band\b", str(v).lower()):
+            key = ROLE_ALIASES.get(re.sub(r"[^a-z -]", "", part).strip())
+            if key:
+                out.add(key)
+    return out
+
+
+def can_see_task(user: dict, task: dict) -> bool:
+    """Juniors can't see tasks that belong only to more senior roles."""
+    my_rank = ROLE_RANK.get(user.get("role"), 0)
+    if user.get("role") == "chairman" or task.get("created_by") == user.get("id"):
+        return True
+    owners = task_owner_roles(task)
+    if not owners:
+        return True
+    return min(ROLE_RANK[r] for r in owners) <= my_rank
+
+
+def visible_tasks(user: dict, tasks: List[dict]) -> List[dict]:
+    return [t for t in tasks if can_see_task(user, t)]
+
+
+async def get_visible_task(task_id: str, user: dict, projection=None) -> dict:
+    task = await db.tasks.find_one({"id": task_id}, projection or {"_id": 0})
+    if not task or not can_see_task(user, task):
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 async def require_user_manager(user: dict = Depends(get_current_user)) -> dict:
@@ -487,6 +553,162 @@ def find_header_row(rows) -> int:
     return 0
 
 
+# ------------------- Monthly activity plan workbook -------------------
+# The marketing team's monthly plan (e.g. "oct_plan.xlsx") is not a task table:
+# it has a DAILY COMMUNICATION sheet (Date / Brand / WhatsApp Communication),
+# an ACTIVITY PLANNER sheet (WEEK 1..4 blocks of label/value rows) and a
+# REQUIREMENT sheet (inputs per MR). Each is turned into tasks here.
+PLAN_FIELDS = ["Brands Covered", "Theme", "Objective", "Inputs Used", "Input Content",
+               "Input Allocation Strategy", "Step-wise Modus Operandi", "Detailing Communication",
+               "POB Strategy", "Monitoring", "Remarks"]
+
+
+def _cell_text(v) -> Optional[str]:
+    if v is None:
+        return None
+    s = re.sub(r"[ \t\xa0]+", " ", str(v)).strip()
+    return s or None
+
+
+def _month_end(d: date) -> date:
+    nxt = date(d.year + (d.month == 12), d.month % 12 + 1, 1)
+    return nxt - timedelta(days=1)
+
+
+def _plan_sheet(wb, *words):
+    for sn in wb.sheetnames:
+        low = sn.lower()
+        if all(w in low for w in words):
+            return wb[sn]
+    return None
+
+
+def _plan_month_start(wb) -> date:
+    daily = _plan_sheet(wb, "daily")
+    if daily is not None:
+        for row in daily.iter_rows(values_only=True):
+            iso = parse_excel_date(row[0]) if row and isinstance(row[0], (datetime, date)) else None
+            if iso:
+                d = date.fromisoformat(iso)
+                return date(d.year, d.month, 1)
+    for sn in wb.sheetnames:
+        m = parse_sheet_month(sn)
+        if m:
+            return date(int(m[:4]), int(m[5:]), 1)
+    t = utc_today()
+    return date(t.year, t.month, 1)
+
+
+def is_plan_workbook(wb) -> bool:
+    return any(("activity planner" in sn.lower() or "daily communication" in sn.lower())
+               for sn in wb.sheetnames)
+
+
+def parse_plan_workbook(wb) -> List[dict]:
+    """Tasks (as task_doc input dicts) from a monthly activity plan workbook."""
+    month_start = _plan_month_start(wb)
+    month_end = _month_end(month_start)
+    month_label = month_start.strftime("%b %Y")
+    tasks = []
+
+    # 1. Daily WhatsApp communication to doctors — one task per day
+    daily = _plan_sheet(wb, "daily")
+    if daily is not None:
+        for row in daily.iter_rows(values_only=True):
+            if not row or not isinstance(row[0], (datetime, date)):
+                continue
+            day = parse_excel_date(row[0])
+            brand = _cell_text(row[1] if len(row) > 1 else None)
+            msg = _cell_text(row[2] if len(row) > 2 else None)
+            if not msg:
+                continue
+            tasks.append({
+                "title": f"WhatsApp communication – {brand}" if brand else "WhatsApp communication",
+                "description": msg,
+                "frequency": "daily", "frequency_label": "Daily",
+                "activity_category": "Daily Doctor Communication",
+                "head": "engagement",
+                "start_date": day, "due_date": day,
+            })
+
+    # 2. Weekly activity drives
+    planner = _plan_sheet(wb, "activity", "plan")
+    if planner is not None:
+        blocks = []  # (block label, {field: [col1, col2, ...]})
+        for row in planner.iter_rows(values_only=True):
+            if not row:
+                continue
+            label = _cell_text(row[0])
+            values = [_cell_text(v) for v in row[1:]]
+            if not label:
+                continue
+            if not any(values):
+                blocks.append((label, {}))
+                continue
+            if blocks:
+                blocks[-1][1][label.lower()] = values
+        for block_label, fields in blocks:
+            names = fields.get("activity name") or []
+            wk = re.search(r"week\s*(\d+)", block_label, re.IGNORECASE)
+            if wk:
+                n = int(wk.group(1))
+                start = month_start + timedelta(days=7 * (n - 1))
+                end = month_end if n >= 4 else start + timedelta(days=6)
+                freq_label = f"Week {n}"
+            else:
+                start, end, freq_label = month_start, month_end, block_label
+            cols = [i for i, v in enumerate(names) if v]
+            for i in cols:
+                def fv(key):
+                    vals = fields.get(key.lower()) or []
+                    return vals[i] if i < len(vals) and vals[i] else (vals[0] if vals else None)
+                title = names[i]
+                theme = fv("Theme")
+                if len(cols) > 1 and theme:
+                    title = f"{title} – {theme}"
+                desc = "\n\n".join(f"{k}: {fv(k)}" for k in PLAN_FIELDS if fv(k))
+                tasks.append({
+                    "title": title,
+                    "description": desc or None,
+                    "frequency": "weekly" if wk else "monthly",
+                    "frequency_label": freq_label,
+                    "activity_category": f"Activity Plan {month_label}",
+                    "head": "engagement",
+                    "start_date": start.isoformat(), "due_date": end.isoformat(),
+                })
+
+    # 3. Inputs to arrange, per activity (allocation per MR)
+    req = _plan_sheet(wb, "requirement")
+    if req is not None:
+        section, items = None, []
+
+        def close():
+            if section and items:
+                tasks.append({
+                    "title": f"Arrange inputs – {section}",
+                    "description": "Allocation per MR:\n" + "\n".join(f"• {n}: {q}" for n, q in items),
+                    "frequency": "monthly", "frequency_label": "Monthly",
+                    "activity_category": f"Input Requirement {month_label}",
+                    "head": "scientific_inputs",
+                    "start_date": month_start.isoformat(), "due_date": month_start.isoformat(),
+                })
+
+        for row in req.iter_rows(values_only=True):
+            if not row:
+                continue
+            label = _cell_text(row[0])
+            qty = row[1] if len(row) > 1 else None
+            if not label or label.lower().startswith("activity / input"):
+                continue
+            if qty is None:
+                close()
+                section, items = label, []
+            else:
+                items.append((label, int(qty) if isinstance(qty, float) and qty.is_integer() else qty))
+        close()
+    return tasks
+
+
 # ------------------- Auth routes -------------------
 @api_router.post("/auth/register", response_model=RegisterResponse)
 async def register(req: RegisterRequest):
@@ -705,7 +927,7 @@ async def admin_clear_data(admin: dict = Depends(require_user_manager)):
 
 # ------------------- Task routes -------------------
 @api_router.post("/tasks")
-async def create_task(req: TaskCreate, user: dict = Depends(require_feature("tasks"))):
+async def create_task(req: TaskCreate, user: dict = Depends(require_task_creator)):
     data = req.model_dump()
     data["units"] = parse_units(data.get("units"))
     data["activity_category"] = clean_str(data.get("activity_category"))
@@ -763,27 +985,22 @@ async def list_tasks(
     pipeline = [
         {"$match": query},
         {"$sort": {"due_date": 1}},
-        {"$limit": 1000},
+        {"$limit": 5000},
         {"$addFields": {"photo_count": {"$size": {"$ifNull": ["$photos", []]}}}},
         {"$project": {"_id": 0, "photos": 0}},
     ]
-    tasks = await db.tasks.aggregate(pipeline).to_list(1000)
-    return tasks
+    tasks = await db.tasks.aggregate(pipeline).to_list(5000)
+    return visible_tasks(user, tasks)[:1000]
 
 
 @api_router.get("/tasks/{task_id}")
 async def get_task(task_id: str, user: dict = Depends(require_feature("tasks"))):
-    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
-    return task
+    return await get_visible_task(task_id, user)
 
 
 @api_router.patch("/tasks/{task_id}")
 async def update_task(task_id: str, req: TaskUpdate, user: dict = Depends(require_feature("tasks"))):
-    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await get_visible_task(task_id, user)
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
 
     # Editing the participant list rebuilds completions and re-derives status
@@ -818,9 +1035,7 @@ async def update_task(task_id: str, req: TaskUpdate, user: dict = Depends(requir
 
 @api_router.patch("/tasks/{task_id}/completion")
 async def update_completion(task_id: str, req: CompletionUpdate, user: dict = Depends(get_current_user)):
-    task = await db.tasks.find_one({"id": task_id}, {"_id": 0})
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await get_visible_task(task_id, user)
     if req.status not in STATUSES:
         raise HTTPException(status_code=400, detail="Invalid status")
     completions = task.get("completions") or []
@@ -861,9 +1076,7 @@ async def delete_task(task_id: str, user: dict = Depends(require_admin)):
 # ------------------- Task photos (marketing activity proof) -------------------
 @api_router.post("/tasks/{task_id}/photos")
 async def add_task_photo(task_id: str, req: PhotoUpload, user: dict = Depends(get_current_user)):
-    task = await db.tasks.find_one({"id": task_id}, {"_id": 0, "id": 1, "photos": 1})
-    if not task:
-        raise HTTPException(status_code=404, detail="Task not found")
+    task = await get_visible_task(task_id, user)
     if len(req.photo_base64) > 4_000_000:
         raise HTTPException(status_code=400, detail="Photo is too large. Please retake with lower quality.")
     if len(task.get("photos") or []) >= 10:
@@ -881,6 +1094,7 @@ async def add_task_photo(task_id: str, req: PhotoUpload, user: dict = Depends(ge
 
 @api_router.delete("/tasks/{task_id}/photos/{photo_id}")
 async def delete_task_photo(task_id: str, photo_id: str, user: dict = Depends(get_current_user)):
+    await get_visible_task(task_id, user, {"_id": 0, "photos": 0})
     result = await db.tasks.update_one({"id": task_id}, {"$pull": {"photos": {"id": photo_id}}})
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -889,7 +1103,7 @@ async def delete_task_photo(task_id: str, photo_id: str, user: dict = Depends(ge
 
 # ------------------- Excel upload -------------------
 @api_router.post("/tasks/upload")
-async def upload_excel(file: UploadFile = File(...), replace: bool = False, user: dict = Depends(require_admin)):
+async def upload_excel(file: UploadFile = File(...), replace: bool = False, user: dict = Depends(require_task_creator)):
     if not file.filename or not file.filename.lower().endswith((".xlsx", ".xlsm")):
         raise HTTPException(status_code=400, detail="Only .xlsx Excel files are supported")
     contents = await file.read()
@@ -897,6 +1111,12 @@ async def upload_excel(file: UploadFile = File(...), replace: bool = False, user
         wb = load_workbook(filename=BytesIO(contents), data_only=True)
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read the Excel file. Please check the format.")
+    if is_plan_workbook(wb):
+        plan = parse_plan_workbook(wb)
+        if not plan:
+            raise HTTPException(status_code=400, detail="No activities could be read from this plan file")
+        inserted = [task_doc(d, user["id"], source="sheet") for d in plan]
+        return await save_uploaded_tasks(inserted, [], replace, file.filename)
     sheet = wb.active
     rows = list(sheet.iter_rows(values_only=True))
     if len(rows) < 2:
@@ -945,7 +1165,10 @@ async def upload_excel(file: UploadFile = File(...), replace: bool = False, user
             "collected_amount": to_float(cell("collected_amount")),
         }
         inserted.append(task_doc(data, user["id"], source="sheet"))
+    return await save_uploaded_tasks(inserted, skipped, replace, file.filename)
 
+
+async def save_uploaded_tasks(inserted: List[dict], skipped: list, replace: bool, filename: str) -> dict:
     replaced_count = None
     if replace:
         if not inserted:
@@ -960,7 +1183,7 @@ async def upload_excel(file: UploadFile = File(...), replace: bool = False, user
     if inserted:
         await db.tasks.insert_many([dict(d) for d in inserted])
     return {
-        "inserted_count": len(inserted), "skipped": skipped, "filename": file.filename,
+        "inserted_count": len(inserted), "skipped": skipped, "filename": filename,
         "replaced_count": replaced_count,
     }
 
@@ -970,13 +1193,18 @@ MONTH_MAP = {"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
              "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
 
 
+MONTH_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", re.IGNORECASE)
+
+
+def find_month_num(text: str) -> Optional[int]:
+    # Whole-word match so e.g. "Primary" is not read as "mar"
+    m = MONTH_RE.search(text or "")
+    return MONTH_MAP[m.group(1).lower()] if m else None
+
+
 def parse_sheet_month(sheet_name: str) -> Optional[str]:
     n = sheet_name.lower()
-    month = None
-    for abbr, num in MONTH_MAP.items():
-        if abbr in n:
-            month = num
-            break
+    month = find_month_num(n)
     if month is None:
         return None
     year = utc_today().year
@@ -988,6 +1216,56 @@ def parse_sheet_month(sheet_name: str) -> Optional[str]:
         if m2:
             year = 2000 + int(m2.group(1))
     return f"{year}-{month:02d}"
+
+
+def sheet_title_month(ws) -> Optional[int]:
+    """Month named in a sheet's title row (e.g. "Brand Performance-Sep",
+    "September Sec Status"). The title is what the data actually covers, so it
+    wins over a stale tab name copied from last month's sheet."""
+    for row in ws.iter_rows(max_row=3, values_only=True):
+        cells = [str(c).strip() for c in row if isinstance(c, str) and c.strip()]
+        if not cells:
+            continue
+        if cells[0].lower() == "brand":  # header row, not a title
+            return None
+        return find_month_num(" ".join(cells))
+    return None
+
+
+def resolve_sheet_month(ws, sheet_name: str, filename: str) -> Optional[str]:
+    base = parse_sheet_month(sheet_name) or parse_sheet_month(filename or "")
+    title_month = sheet_title_month(ws)
+    if title_month is None:
+        return base
+    year = int(base[:4]) if base else utc_today().year
+    return f"{year}-{title_month:02d}"
+
+
+def month_to_date(weeks: list) -> Optional[float]:
+    """Weekly columns in every performance sheet are cumulative month-to-date
+    ("Sec till 7th", "till 14th", ...), so the month's sales so far is the
+    latest week that has a value — not the sum of the weeks."""
+    return next((w for w in reversed(weeks) if w is not None), None)
+
+
+def apply_current_week(docs: List[dict]) -> None:
+    """Set each row's month-to-date sales from the sheet's current week: the
+    last week column any row has filled. A row left blank in that week counts
+    as 0 there (as the sheet's own Achievement % does), provided it has figures
+    in an earlier week."""
+    keys = ("w1", "w2", "w3", "w4")
+    filled = [i for i, k in enumerate(keys) if any(d.get(k) is not None for d in docs)]
+    if not filled:
+        return
+    cur = keys[filled[-1]]
+    for d in docs:
+        if all(d.get(k) is None for k in keys):
+            sales = None
+        else:
+            sales = d.get(cur) if d.get(cur) is not None else 0.0
+        d["sales_total"] = sales
+        t = d.get("target")
+        d["achievement_pct"] = round(sales / t * 100, 1) if (t and sales is not None) else None
 
 
 def sheet_text(ws, max_row=8) -> str:
@@ -1033,8 +1311,7 @@ def parse_brand_sheet(ws, month: str) -> List[dict]:
 
         target = to_float(g(1))
         weeks = [to_float(g(i)) for i in (2, 3, 4, 5)]
-        # Whole-month sales = sum of all four weeks, not just the last one entered
-        total = sum(w for w in weeks if w is not None) if any(w is not None for w in weeks) else None
+        total = month_to_date(weeks)
         ach = round(total / target * 100, 1) if (target and total is not None) else None
         docs.append({
             "id": str(uuid.uuid4()),
@@ -1048,6 +1325,7 @@ def parse_brand_sheet(ws, month: str) -> List[dict]:
             "top_territory": str(g(7)).strip() if g(7) is not None else None,
             "low_territory": str(g(8)).strip() if g(8) is not None else None,
         })
+    apply_current_week(docs)
     return docs
 
 
@@ -1075,9 +1353,13 @@ def parse_mgmt_sheet(ws, month: str) -> Optional[dict]:
                 def g(i):
                     return row[i] if i < len(row) else None
                 if kind == "numeric":
+                    weeks = [to_float(g(i)) for i in (1, 2, 3, 4)]
+                    total = to_float(g(5))
                     metrics[key] = {
-                        "weeks": [to_float(g(i)) for i in (1, 2, 3, 4)],
-                        "total": to_float(g(5)),
+                        "weeks": weeks,
+                        # Weeks are month-to-date; when the TOTAL cell is blank
+                        # (month still running) the latest week is the total so far.
+                        "total": total if total is not None else month_to_date(weeks),
                     }
                 else:
                     metrics[key] = {
@@ -1089,51 +1371,98 @@ def parse_mgmt_sheet(ws, month: str) -> Optional[dict]:
     return {"id": str(uuid.uuid4()), "month": month, "metrics": metrics}
 
 
-TERR_SKIP_PREFIXES = ("h.q", "region / hq", "territory management", "total")
+TERR_HEADER_SKIP = ("h.q", "region / hq", "territory management")
+TERR_GROUP_WORDS = ("region", "zone", "team", "india")
 
 
 def parse_territory_sheet(ws, month: str) -> List[dict]:
+    """Territory rows are grouped under region/zone labels. A label with no
+    figures is a heading for the rows below it; a label carrying figures is a
+    subtotal of the rows above it ("Total", "Indore Region", "South Zone",
+    "All India"). Subtotal rows are never stored as territories."""
     docs = []
-    current_region = None
+    pending = []           # data rows not yet assigned a region
+    heading = None         # region from the latest heading row still open
+    last_label = None      # most recent region/zone name seen, as a fallback
+    after_total = False    # the previous group was closed by a plain "Total" row
+    prev_hq = None
+
+    def flush(region):
+        for d in pending:
+            d["region"] = region or "Other"
+        pending.clear()
+
     for row in ws.iter_rows(values_only=True):
-        if not row or row[0] is None:
-            continue
-        s0 = str(row[0]).strip()
-        low = s0.lower()
-        if not s0:
+        if not row:
             continue
 
         def g(i):
             return row[i] if i < len(row) else None
 
-        if "region" in low and g(1) is None and g(3) is None:
-            current_region = re.sub(r"\s*\(.*\)\s*$", "", s0).strip()
+        s0 = str(g(0)).strip() if g(0) is not None else ""
+        name = str(g(1)).strip() if g(1) is not None else ""
+        low = s0.lower()
+        if not s0 and not name:
             continue
-        if any(low.startswith(p) for p in TERR_SKIP_PREFIXES) or "sec status" in low:
+        if any(low.startswith(p) for p in TERR_HEADER_SKIP) or "sec status" in low:
             continue
-        # data row must have a person name or a target/sales value
-        if g(1) is None and g(3) is None and g(7) is None:
-            continue
+
         target = to_float(g(3))
         weeks = [to_float(g(i)) for i in (4, 5, 6, 7)]
-        # Whole-month sales = sum of all four weeks, not just the last one entered.
-        # Always computed from the weeks ourselves — a sheet's own "Ach %" column
-        # (if present) is ignored, since it may have been computed differently
-        # (e.g. last-week-only) by whoever built the source spreadsheet.
-        total = sum(w for w in weeks if w is not None) if any(w is not None for w in weeks) else None
+        has_figures = target is not None or any(w is not None for w in weeks)
+
+        if s0 and not name and (low.startswith("total") or low.startswith("zone total")
+                                or any(w in low for w in TERR_GROUP_WORDS)):
+            label = re.sub(r"\s+", " ", re.sub(r"\s*\(.*\)\s*$", "", s0)).strip()
+            is_named = not low.startswith("total") and "all india" not in low
+            if not has_figures:
+                # Heading for the rows that follow
+                flush(heading or last_label)
+                heading = label
+                last_label = label
+            elif heading:
+                # Subtotal closing an open heading's group
+                flush(heading)
+                heading = None
+            elif is_named and after_total:
+                # Heading-style area (groups end in "Total"): rows between the
+                # last Total and this label are standalone HQs, and the label
+                # heads the rows that follow.
+                for d in pending:
+                    d["region"] = d["hq"] or "Other"
+                pending.clear()
+                heading = label
+            else:
+                # Footer-style subtotal naming the rows above it
+                flush(label if is_named else last_label)
+            if is_named:
+                last_label = label
+            after_total = not is_named and has_figures
+            continue
+
+        if not name and not has_figures:
+            continue  # empty territory placeholder (e.g. "Navi mumbai")
+
+        hq = s0 or prev_hq  # rows with a blank HQ cell continue the HQ above
+        prev_hq = hq
+        total = month_to_date(weeks)
         ach = round(total / target * 100, 1) if (target and total is not None) else None
-        docs.append({
+        doc = {
             "id": str(uuid.uuid4()),
             "month": month,
-            "region": current_region or "Other",
-            "hq": s0,
-            "be_name": str(g(1)).strip() if g(1) is not None else None,
+            "region": None,
+            "hq": hq,
+            "be_name": name or None,
             "doj": parse_excel_date(g(2)),
             "target": target,
             "w1": weeks[0], "w2": weeks[1], "w3": weeks[2], "w4": weeks[3],
             "sales_total": total,
-            "achievement_pct": round(ach, 1) if ach is not None else None,
-        })
+            "achievement_pct": ach,
+        }
+        docs.append(doc)
+        pending.append(doc)
+    flush(heading or last_label)
+    apply_current_week(docs)
     return docs
 
 
@@ -1243,10 +1572,10 @@ async def upload_performance(file: UploadFile = File(...), user: dict = Depends(
     months_parsed = []
     total_inserted = 0
     for sn in wb.sheetnames:
-        month = parse_sheet_month(sn) or parse_sheet_month(file.filename or "")
+        ws = wb[sn]
+        month = resolve_sheet_month(ws, sn, file.filename or "")
         if month is None:
             continue
-        ws = wb[sn]
         if ptype == "brand":
             docs = parse_brand_sheet(ws, month)
         elif ptype == "territory":
@@ -1430,11 +1759,18 @@ async def performance_growth(user: dict = Depends(require_feature("performance")
 # ------------------- Meta / filters -------------------
 @api_router.get("/meta/filters")
 async def meta_filters(user: dict = Depends(get_current_user)):
-    hqs = [h for h in await db.tasks.distinct("hq") if h]
-    assignees = [a for a in await db.tasks.distinct("assignee") if a]
-    roles = [r for r in await db.tasks.distinct("role") if r]
-    activity_categories = [c for c in await db.tasks.distinct("activity_category") if c]
-    frequencies = [f for f in await db.tasks.distinct("frequency") if f]
+    tasks = visible_tasks(user, await db.tasks.find(
+        {}, {"_id": 0, "hq": 1, "assignee": 1, "role": 1, "activity_category": 1,
+             "frequency": 1, "created_by": 1}).to_list(10000))
+
+    def distinct(key):
+        return list({t[key] for t in tasks if t.get(key)})
+
+    hqs = distinct("hq")
+    assignees = distinct("assignee")
+    roles = distinct("role")
+    activity_categories = distinct("activity_category")
+    frequencies = distinct("frequency")
     frequencies.sort(key=lambda f: FREQUENCIES.index(f) if f in FREQUENCIES else 99)
     return {"hqs": sorted(hqs), "assignees": sorted(assignees), "roles": sorted(roles),
             "activity_categories": sorted(activity_categories), "frequencies": frequencies,
@@ -1480,12 +1816,15 @@ def sales_summary(tasks: List[dict]):
 @api_router.get("/dashboard")
 async def dashboard(user: dict = Depends(require_feature("dashboard"))):
     start, end = period_range("month")
-    month_tasks = await db.tasks.find(
-        {"due_date": {"$gte": start, "$lte": end}}, {"_id": 0, "photos": 0}).to_list(2000)
+    month_tasks = visible_tasks(user, await db.tasks.find(
+        {"due_date": {"$gte": start, "$lte": end}}, {"_id": 0, "photos": 0}).to_list(5000))
     today = utc_today().isoformat()
+    # Undated daily tasks recur every day; dated ones (e.g. a plan's daily
+    # doctor message) belong only to their own day.
     todays = [t for t in month_tasks if t.get("due_date") == today or
-              (t["frequency"] == "daily" and t["status"] != "completed")][:10]
-    recent = await db.tasks.find({}, {"_id": 0, "photos": 0}).sort("created_at", -1).to_list(5)
+              (t["frequency"] == "daily" and not t.get("start_date") and t["status"] != "completed")][:10]
+    recent = visible_tasks(user, await db.tasks.find(
+        {}, {"_id": 0, "photos": 0}).sort("created_at", -1).to_list(200))[:5]
     return {
         "kpis": summarize(month_tasks),
         "sales": sales_summary(month_tasks),
@@ -1499,12 +1838,12 @@ HEAD_LABELS = {"company": "Company", "scientific_inputs": "Scientific Inputs",
                "engagement": "Engagement", "Unassigned": "Unassigned"}
 
 
-async def build_report(period: str) -> dict:
+async def build_report(period: str, user: dict) -> dict:
     if period not in ("week", "month", "quarter"):
         period = "month"
     start, end = period_range(period)
-    tasks = await db.tasks.find(
-        {"due_date": {"$gte": start, "$lte": end}}, {"_id": 0, "photos": 0}).to_list(5000)
+    tasks = visible_tasks(user, await db.tasks.find(
+        {"due_date": {"$gte": start, "$lte": end}}, {"_id": 0, "photos": 0}).to_list(5000))
     return {
         "period": period,
         "range": {"start": start, "end": end},
@@ -1521,7 +1860,7 @@ async def build_report(period: str) -> dict:
 
 @api_router.get("/reports")
 async def reports(period: str = "month", user: dict = Depends(require_feature("reports"))):
-    return await build_report(period)
+    return await build_report(period, user)
 
 
 @api_router.get("/reports/pdf")
@@ -1533,7 +1872,7 @@ async def reports_pdf(period: str = "month", user: dict = Depends(require_featur
     from reportlab.lib.units import mm
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 
-    data = await build_report(period)
+    data = await build_report(period, user)
     kpis = data["kpis"]
     sales = data["sales"]
 
@@ -1748,6 +2087,31 @@ async def seed_users():
             })
     logger.info("Demo users seeded")
     await seed_task_sheet()
+    await recompute_perf_month_to_date()
+
+
+PERF_MTD_MARKER = "perf_mtd_v1"
+
+
+async def recompute_perf_month_to_date():
+    """One-off fix for brand/territory rows stored before sales were read as
+    month-to-date: recompute sales_total/achievement_pct from the stored weeks."""
+    marker = await db.app_meta.find_one({"key": "perf_mtd"})
+    if marker and marker.get("version") == PERF_MTD_MARKER:
+        return
+    for coll in (db.brand_performance, db.territory_performance):
+        docs = await coll.find({}, {"_id": 0}).to_list(20000)
+        by_month = {}
+        for d in docs:
+            by_month.setdefault(d.get("month"), []).append(d)
+        for month_docs in by_month.values():
+            apply_current_week(month_docs)
+            for d in month_docs:
+                await coll.update_one({"id": d["id"]}, {"$set": {
+                    "sales_total": d["sales_total"], "achievement_pct": d["achievement_pct"]}})
+    await db.app_meta.update_one(
+        {"key": "perf_mtd"}, {"$set": {"key": "perf_mtd", "version": PERF_MTD_MARKER}}, upsert=True)
+    logger.info("Performance month-to-date totals recomputed")
 
 
 SEED_MARKER = "task_sheet_v1"
