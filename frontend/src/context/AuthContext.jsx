@@ -5,6 +5,8 @@ const AuthContext = createContext(null);
 
 const ADMIN_ROLES = new Set(["marketing_head", "marketing_deputy_head", "chairman"]);
 const USER_MANAGER_ROLES = new Set(["chairman"]);
+// Roles that may create tasks and upload task sheets (admins + CEO)
+const TASK_CREATOR_ROLES = new Set([...ADMIN_ROLES, "ceo"]);
 
 const ALL_FEATURES = ["dashboard", "tasks", "performance", "reports"];
 
@@ -65,6 +67,7 @@ export function AuthProvider({ children }) {
 
   const isAdmin = !!user && ADMIN_ROLES.has(user.role);
   const isUserManager = !!user && USER_MANAGER_ROLES.has(user.role);
+  const canCreateTasks = !!user && TASK_CREATOR_ROLES.has(user.role);
   const hasFeature = useCallback(
     (f) => !user || user.role === "chairman" || features.includes(f),
     [user, features]
@@ -72,7 +75,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, setUser, loading, login, register, logout, isAdmin, isUserManager, features, hasFeature, loadFeatures }}
+      value={{ user, setUser, loading, login, register, logout, isAdmin, isUserManager, canCreateTasks, features, hasFeature, loadFeatures }}
     >
       {children}
     </AuthContext.Provider>
