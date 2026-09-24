@@ -173,7 +173,7 @@ export default function Tasks() {
         <UploadModal
           endpoint="/tasks/upload"
           title="Upload Task Sheet"
-          hint="Columns are matched flexibly: Assignee, Task Name, Description, Frequency (Daily/Weekly/Monthly/Quarterly/Ongoing/Per CME schedule…), Start / Due Date, Category (activity area), Reporting Due Date. HQ, Role and Target Amount are optional. A title row above the headers is fine."
+          hint="Upload the monthly plan (sheets: Daily Communication, Activity Planner, Requirement) — it becomes daily doctor messages, weekly activity drives and input tasks. Re-uploading a month's plan updates that month and keeps progress already marked. A plain task table (Task Name, Assignee, Frequency, Due Date…) also works."
           allowReplace
           onClose={() => { setShowUpload(false); closeModals(); }}
           onDone={() => load()}
@@ -345,8 +345,9 @@ export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = "
             <span>
               <b>Replace existing task sheet</b>
               <div style={{ fontSize: 12, color: "var(--ink-500)" }}>
-                Removes tasks from previous sheet uploads before adding these, so updated rows don't create
-                duplicates. Manually created tasks are never affected.
+                For plain task tables: removes tasks from previous sheet uploads before adding these, so updated
+                rows don't create duplicates. Monthly plans always update their own month. Manually created tasks
+                are never affected.
               </div>
             </span>
           </label>
@@ -362,7 +363,9 @@ export function UploadModal({ endpoint, title, hint, onClose, onDone, accept = "
           </div>
           {result.replaced_count != null && (
             <div style={{ marginTop: 4, color: "var(--ink-700)" }}>
-              {result.replaced_count} prior sheet task(s) removed.
+              {result.plan_month
+                ? `Updated the ${result.plan_month} plan (${result.replaced_count} earlier task(s) replaced; progress kept).`
+                : `${result.replaced_count} prior sheet task(s) removed.`}
             </div>
           )}
           {result.skipped?.length > 0 && (

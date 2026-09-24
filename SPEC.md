@@ -107,12 +107,19 @@ frequencies (ongoing / as-scheduled) stay undated.
   missing a task name are reported back as skipped with row numbers. Verified
   against the production task sheet (Assignee, Task Name, Description, Frequency,
   Start / Due Date, Category, Reporting Due Date).
-- **Monthly activity plan upload**: a plan workbook (sheets "DAILY
-  COMMUNICATION…", "ACTIVITY PLANNER…", "REQUIREMENT") uploads through the same
-  endpoint and becomes tasks: one per day's doctor WhatsApp message (dated),
-  one per weekly activity drive (Week N → days 1–7, 8–14, 15–21, 22–end; extra
-  blocks span the month; full playbook in the description), and one "Arrange
-  inputs" task per requirement section listing per-MR allocations.
+- **Monthly activity plan upload — the standard task sheet format** (e.g.
+  `oct_plan_1.xlsx`): sheets "DAILY COMMUNICATION FOR <MON><YY>" (Date / Brand /
+  WhatsApp Communication), "ACTIVITY PLANNER <MON><YY>" (WEEK N blocks of
+  label/value rows; extra columns = variants) and "REQUIREMENT" (input →
+  allocation per MR). Uploads through the same endpoint and becomes tasks: one
+  per day's doctor WhatsApp message (dated), one per weekly activity drive
+  (Week N → days 1–7, 8–14, …; the last week runs to month end; non-week blocks
+  like "Extra for Supreg" span the month; full playbook in the description),
+  and one "Arrange inputs" task per requirement section. The month comes from
+  the daily sheet's dates. Plan tasks carry `plan_month`; re-uploading a
+  month's plan replaces only that month's plan tasks, carrying over status,
+  per-assignee completion, collected amount and photos for tasks with the same
+  title + due date.
 - **Replace Task Sheet**: every task carries a `source` (`manual` — created
   in-app — or `sheet` — from an Excel upload or the initial seed). Uploading
   with `POST /api/tasks/upload?replace=true` deletes all existing

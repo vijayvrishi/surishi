@@ -647,13 +647,17 @@ def parse_plan_workbook(wb) -> List[dict]:
                 continue
             if blocks:
                 blocks[-1][1][label.lower()] = values
+        week_nums = [int(m.group(1)) for m in
+                     (re.search(r"week\s*(\d+)", b[0], re.IGNORECASE) for b in blocks) if m]
+        last_week = max(week_nums, default=4)
         for block_label, fields in blocks:
             names = fields.get("activity name") or []
             wk = re.search(r"week\s*(\d+)", block_label, re.IGNORECASE)
             if wk:
                 n = int(wk.group(1))
-                start = month_start + timedelta(days=7 * (n - 1))
-                end = month_end if n >= 4 else start + timedelta(days=6)
+                start = min(month_start + timedelta(days=7 * (n - 1)), month_end)
+                # The plan's last week runs to month end (e.g. Week 4 = 22nd–31st)
+                end = month_end if n >= last_week else min(start + timedelta(days=6), month_end)
                 freq_label = f"Week {n}"
             else:
                 start, end, freq_label = month_start, month_end, block_label
@@ -1112,11 +1116,7 @@ async def upload_excel(file: UploadFile = File(...), replace: bool = False, user
     except Exception:
         raise HTTPException(status_code=400, detail="Could not read the Excel file. Please check the format.")
     if is_plan_workbook(wb):
-        plan = parse_plan_workbook(wb)
-        if not plan:
-            raise HTTPException(status_code=400, detail="No activities could be read from this plan file")
-        inserted = [task_doc(d, user["id"], source="sheet") for d in plan]
-        return await save_uploaded_tasks(inserted, [], replace, file.filename)
+        return await save_plan_tasks(wb, user, file.filename)
     sheet = wb.active
     rows = list(sheet.iter_rows(values_only=True))
     if len(rows) < 2:
@@ -1166,6 +1166,38 @@ async def upload_excel(file: UploadFile = File(...), replace: bool = False, user
         }
         inserted.append(task_doc(data, user["id"], source="sheet"))
     return await save_uploaded_tasks(inserted, skipped, replace, file.filename)
+
+
+PLAN_CARRY_FIELDS = ("status", "completions", "completion_completed", "completion_total",
+                     "completion_pct", "completed_at", "collected_amount", "photos")
+
+
+async def save_plan_tasks(wb, user: dict, filename: str) -> dict:
+    """Monthly plan upload. Re-uploading a month's plan replaces that month's
+    plan tasks only (other months and manual tasks are untouched); progress
+    already recorded on a task (status, per-assignee completion, photos) is
+    kept when the same task (title + due date) is in the new file."""
+    plan = parse_plan_workbook(wb)
+    if not plan:
+        raise HTTPException(status_code=400, detail="No activities could be read from this plan file")
+    plan_month = _plan_month_start(wb).isoformat()[:7]
+    existing = await db.tasks.find({"plan_month": plan_month}, {"_id": 0}).to_list(5000)
+    prior = {(t.get("title"), t.get("due_date")): t for t in existing}
+    docs = []
+    for d in plan:
+        doc = task_doc(d, user["id"], source="sheet")
+        doc["plan_month"] = plan_month
+        old = prior.get((doc["title"], doc["due_date"]))
+        if old:
+            for k in PLAN_CARRY_FIELDS:
+                if old.get(k) is not None:
+                    doc[k] = old[k]
+        docs.append(doc)
+    if existing:
+        await db.tasks.delete_many({"plan_month": plan_month})
+    await db.tasks.insert_many([dict(d) for d in docs])
+    return {"inserted_count": len(docs), "skipped": [], "filename": filename,
+            "replaced_count": len(existing) if existing else None, "plan_month": plan_month}
 
 
 async def save_uploaded_tasks(inserted: List[dict], skipped: list, replace: bool, filename: str) -> dict:
